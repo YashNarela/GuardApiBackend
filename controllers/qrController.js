@@ -1,0 +1,233 @@
+// controllers/qrController.js
+const QR = require("../models/QR");
+const { generateQR } = require("../utils/qrGenerator");
+const ApiResponse = require("../utils/apiResponse");
+
+const User=require("../models/User")
+
+
+
+
+// exports.createQR = async (req, res) => {
+//   try {
+//     const { siteId, description, lat, lng, radius } = req.body;
+
+//     console.log('req.user', req.user);
+    
+
+//     const qrDoc = await QR.create({
+//       siteId: siteId || null,
+//       description: description || null,
+//       lat: Number(lat),
+//       lng: Number(lng),
+//       radius: Number(radius),
+//       createdBy: req.user.id,
+
+//       companyId: req.user.companyId,
+//     });
+
+//     const { qrImageBase64 } = await generateQR(
+//       qrDoc.lat,
+//       qrDoc.lng,
+//       qrDoc.radius,
+//       qrDoc._id,
+//       qrDoc.siteId
+//     );
+
+//     qrDoc.qrImageBase64 = qrImageBase64;
+//     await qrDoc.save();
+
+//     return res.status(201).json(
+//       new ApiResponse(true, "QR created", {
+//         qr: qrDoc,
+//         qrImageDataUrl: qrImageBase64,
+//       })
+//     );
+//   } catch (err) {
+//     console.error(err);
+//     return res.status(500).json(new ApiResponse(false, err.message));
+//   }
+// };
+
+
+// exports.createQR = async (req, res) => {
+//   try {
+//     const { siteId, description, lat, lng, radius } = req.body;
+
+//     console.log('req.user', req.user);
+
+//     // Use findOneAndUpdate with upsert to prevent duplicates
+//     let qrDoc = await QR.findOneAndUpdate(
+//       { siteId, lat: Number(lat), lng: Number(lng) }, // unique combination
+//       {
+//         $setOnInsert: {
+//           description: description || null,
+//           radius: Number(radius),
+//           createdBy: req.user.id,
+//           companyId: req.user.companyId,
+//         },
+//       },
+//       { new: true, upsert: true } // return the document after update/insert
+//     );
+
+//     // Generate QR image if it's a newly inserted document
+//     if (!qrDoc.qrImageBase64) {
+//       const { qrImageBase64 } = await generateQR(
+//         qrDoc.lat,
+//         qrDoc.lng,
+//         qrDoc.radius,
+//         qrDoc._id,
+//         qrDoc.siteId
+//       );
+
+//       qrDoc.qrImageBase64 = qrImageBase64;
+//       await qrDoc.save();
+//     }
+
+//     return res.status(200).json(
+//       new ApiResponse(true, "QR created or already exists", {
+//         qr: qrDoc,
+//         qrImageDataUrl: qrDoc.qrImageBase64,
+//       })
+//     );
+//   } catch (err) {
+//     console.error(err);
+//     return res.status(500).json(new ApiResponse(false, err.message));
+//   }
+// };
+
+
+exports.createQR = async (req, res) => {
+  try {
+    const { siteId, description, lat, lng, radius } = req.body;
+
+    // First, try to find or create the QR.
+    let qrDoc;
+    try {
+      qrDoc = await QR.findOneAndUpdate(
+        { siteId, lat: Number(lat), lng: Number(lng) }, // unique combination
+        {
+          $setOnInsert: {
+            description: description || null,
+            radius: Number(radius),
+            createdBy: req.user.id,
+            companyId: req.user.companyId,
+          },
+        },
+        { new: true, upsert: true }
+      );
+    } catch (err) {
+      // Duplicate key error (E11000): fetch the existing QR and continue
+      if (err.code === 11000) {
+        qrDoc = await QR.findOne({
+          siteId,
+          lat: Number(lat),
+          lng: Number(lng),
+        });
+      } else {
+        throw err;
+      }
+    }
+
+    // Generate QR image if missing
+    if (!qrDoc.qrImageBase64) {
+      const { qrImageBase64 } = await generateQR(
+        qrDoc.lat,
+        qrDoc.lng,
+        qrDoc.radius,
+        qrDoc._id,
+        qrDoc.siteId
+      );
+      qrDoc.qrImageBase64 = qrImageBase64;
+      await qrDoc.save();
+    }
+
+    return res.status(200).json(
+      new ApiResponse(true, "QR created or already exists", {
+        qr: qrDoc,
+        qrImageDataUrl: qrDoc.qrImageBase64,
+      })
+    );
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json(new ApiResponse(false, err.message));
+  }
+};
+exports.getAllQR = async (req, res) => {
+  try {
+    let filter = {};
+
+    // if logged in user is employee, restrict to his own QR codes
+    // if (req.user.role === "supervisor") {
+    //   filter = { createdBy: req.user.id };
+    // }
+
+    if (req.user.role === "supervisor") {
+      // See all company QRs
+      filter = { companyId: req.user.companyId };
+    } else if (req.user.role === "employee") {
+      // Company sees all QRs under them
+      filter = { companyId: req.user.id };
+    } else if (req.user.role === "guard") {
+      // Guard sees only assigned QRs (via patrol plan)
+      filter = { _id: { $in: assignedCheckpoints } };
+    }
+
+    // admins can see all QRs
+    const qrs = await QR.find(filter).populate("createdBy", "name email");
+
+    return res.status(200).json(new ApiResponse(true, "QRs fetched", { qrs }));
+  } catch (err) {
+    return res.status(500).json(new ApiResponse(false, err.message));
+  }
+};
+
+// DELETE /api/qr/:id (employee/admin)
+exports.deleteQR = async (req, res) => {
+  try {
+    const qr = await QR.findByIdAndDelete(req.params.id);
+    if (!qr) {
+      return res.status(404).json(new ApiResponse(false, "QR not found"));
+    }
+    return res.status(200).json(new ApiResponse(true, "QR deleted"));
+  } catch (err) {
+    return res.status(500).json(new ApiResponse(false, err.message));
+  }
+};
+
+
+
+
+
+exports.getQRForGuard = async (req, res) => {
+  try {
+
+
+    console.log('Qr  ',req.user );
+    
+
+
+    if (req.user.role !== "guard") {
+      return res.status(403).json(new ApiResponse(false, "Only guards can access this"));
+    }
+
+    // find guard’s employer (the employee who created this guard)
+    const guard = await User.findById(req.user.id);
+    if (!guard || !guard.createdBy) {
+      return res.status(404).json(new ApiResponse(false, "Employer not found for this guard"));
+    }
+
+    // fetch only QR codes created by that employer
+    // const qrs = await QR.find({ createdBy: guard.createdBy }).select(
+    //   "_id lat lng radius siteId description createdAt"
+    // );
+
+    const qrs = await QR.find({ createdBy: guard.createdBy });
+
+
+    return res.status(200).json(new ApiResponse(true, "QR list for guard", { qrs }));
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json(new ApiResponse(false, err.message));
+  }
+};
