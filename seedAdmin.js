@@ -18,12 +18,12 @@ const connectDB = async () => {
 connectDB()
 
 async function seed(){
-  const exists = await User.findOne({ email: "yash@company.com" });
+  const exists = await User.findOne({ email: "admin@company.com" });
   if(exists){ console.log("Admin exists"); return process.exit(); }
-  const hash = await bcrypt.hash("yash", 10);
+  const hash = await bcrypt.hash("123456", 10);
   await User.create({
-    name: "yash",
-    email: "yash@company.com",
+    name: "admin",
+    email: "admin@company.com",
     password: hash,
     role: "admin",
   });

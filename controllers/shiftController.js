@@ -245,118 +245,178 @@ exports.deleteShift = async (req, res) => {
 };
 
 
+
+
 // exports.updateShift = async (req, res) => {
 //   try {
-//     const { shiftName, startTime, endTime, shiftType, assignedGuards } =
-//       req.body;
-
-
-//     console.log('Update Shift Req Body:', req.body);
-    
+//     const { shiftName, startTime, endTime, shiftType, assignedGuards } = req.body;
 
 //     const filter = { _id: req.params.id };
 //     if (req.user.role === "supervisor") filter.createdBy = req.user.id;
 
 //     const updateData = {};
+//     const now = new Date();
+//     let newStart, newEnd;
+
 //     if (startTime) {
-//       const start = new Date(startTime);
-//       if (isNaN(start)) {
-//         return res.status(400).json(new ApiResponse(false, "Invalid start time format"));
-//       }
-//       updateData.startTime = start.toISOString(); // enforce UTC
+//       newStart = new Date(startTime);
+//       if (isNaN(newStart)) return res.status(400).json(new ApiResponse(false, "Invalid start time format"));
+//       if (newStart < now) return res.status(400).json(new ApiResponse(false, "Shift start time cannot be in the past"));
+//       updateData.startTime = newStart.toISOString();
 //     }
 
 //     if (endTime) {
-//       const end = new Date(endTime);
-//       if (isNaN(end)) {
-//         return res.status(400).json(new ApiResponse(false, "Invalid end time format"));
+//       newEnd = new Date(endTime);
+//       if (isNaN(newEnd)) return res.status(400).json(new ApiResponse(false, "Invalid end time format"));
+//       updateData.endTime = newEnd.toISOString();
+//     }
+
+//     // Validate end > start
+//     if (newStart && newEnd && newEnd <= newStart) {
+//       return res.status(400).json(new ApiResponse(false, "End time must be after start time"));
+//     }
+
+//     if (shiftType) updateData.shiftType = shiftType;
+//     if (assignedGuards?.length) updateData.assignedGuards = assignedGuards;
+
+//     // Overlap check
+//     if ((newStart || newEnd) && assignedGuards?.length) {
+//       const currentShift = await Shift.findById(req.params.id);
+//       if (!currentShift) return res.status(404).json(new ApiResponse(false, "Shift not found"));
+
+//       const overlapStart = newStart || currentShift.startTime;
+//       const overlapEnd = newEnd || currentShift.endTime;
+
+//       const overlap = await Shift.findOne({
+//         _id: { $ne: req.params.id },
+//         assignedGuards: { $in: assignedGuards },
+//         isActive: true,
+//         startTime: { $lt: overlapEnd },
+//         endTime: { $gt: overlapStart }
+//       });
+
+//       if (overlap) {
+//         return res.status(400).json(new ApiResponse(false, "One or more guards already have an overlapping shift"));
 //       }
-//       updateData.endTime = end.toISOString(); // enforce UTC
 //     }
 
-//     if (shiftType) {
-//       updateData.shiftType = shiftType;
-//     }
+//     const updated = await Shift.findOneAndUpdate(filter, updateData, { new: true })
+//       .populate("assignedGuards", "name email role");
 
-//       if (assignedGuards && assignedGuards.length > 0) {
-//         updateData.assignedGuards = assignedGuards;
-//       }
+//     if (!updated) return res.status(404).json(new ApiResponse(false, "Shift not found"));
 
-//     const updated = await Shift.findOneAndUpdate(filter, updateData, {
-//       new: true,
-//     }).populate("assignedGuards", "name email role");
+//     return res.status(200).json(new ApiResponse(true, "Shift updated", updated));
 
-//     if (!updated) {
-//       return res.status(404).json(new ApiResponse(false, "Shift not found"));
-//     }
-
-//     return res
-//       .status(200)
-//       .json(new ApiResponse(true, "Shift updated", updated));
 //   } catch (err) {
+//     console.error("Error updating shift:", err);
 //     return res.status(500).json(new ApiResponse(false, err.message));
 //   }
 // };
+
+
 exports.updateShift = async (req, res) => {
   try {
-    const { shiftName, startTime, endTime, shiftType, assignedGuards } = req.body;
+    const {
+      shiftName,
+      startTime,
+      endTime,
+      shiftType,
+      assignedGuards,
+      timezone,
+    } = req.body;
 
     const filter = { _id: req.params.id };
     if (req.user.role === "supervisor") filter.createdBy = req.user.id;
 
     const updateData = {};
-    const now = new Date();
-    let newStart, newEnd;
+    const now = moment();
+    let startMoment, endMoment;
 
+    // Validate and process startTime with moment
     if (startTime) {
-      newStart = new Date(startTime);
-      if (isNaN(newStart)) return res.status(400).json(new ApiResponse(false, "Invalid start time format"));
-      if (newStart < now) return res.status(400).json(new ApiResponse(false, "Shift start time cannot be in the past"));
-      updateData.startTime = newStart.toISOString();
+      startMoment = moment(startTime);
+      if (!startMoment.isValid()) {
+        return res
+          .status(400)
+          .json(new ApiResponse(false, "Invalid start time format"));
+      }
+      if (startMoment.isBefore(now)) {
+        return res
+          .status(400)
+          .json(
+            new ApiResponse(false, "Shift start time cannot be in the past")
+          );
+      }
+      updateData.startTime = startMoment.toDate();
     }
 
+    // Validate and process endTime with moment
     if (endTime) {
-      newEnd = new Date(endTime);
-      if (isNaN(newEnd)) return res.status(400).json(new ApiResponse(false, "Invalid end time format"));
-      updateData.endTime = newEnd.toISOString();
+      endMoment = moment(endTime);
+      if (!endMoment.isValid()) {
+        return res
+          .status(400)
+          .json(new ApiResponse(false, "Invalid end time format"));
+      }
+      updateData.endTime = endMoment.toDate();
     }
 
-    // Validate end > start
-    if (newStart && newEnd && newEnd <= newStart) {
-      return res.status(400).json(new ApiResponse(false, "End time must be after start time"));
+    // Validate end > start using moment
+    if (startTime && endTime && endMoment.isSameOrBefore(startMoment)) {
+      return res
+        .status(400)
+        .json(new ApiResponse(false, "End time must be after start time"));
     }
 
+    // Handle other fields
+    if (shiftName) updateData.shiftName = shiftName;
     if (shiftType) updateData.shiftType = shiftType;
-    if (assignedGuards?.length) updateData.assignedGuards = assignedGuards;
+    if (assignedGuards) updateData.assignedGuards = assignedGuards;
+    if (timezone) updateData.timezone = timezone;
 
-    // Overlap check
-    if ((newStart || newEnd) && assignedGuards?.length) {
+    // Overlap check with moment
+    if ((startTime || endTime) && assignedGuards?.length) {
       const currentShift = await Shift.findById(req.params.id);
-      if (!currentShift) return res.status(404).json(new ApiResponse(false, "Shift not found"));
+      if (!currentShift) {
+        return res.status(404).json(new ApiResponse(false, "Shift not found"));
+      }
 
-      const overlapStart = newStart || currentShift.startTime;
-      const overlapEnd = newEnd || currentShift.endTime;
+      const overlapStart = startMoment
+        ? startMoment.toDate()
+        : currentShift.startTime;
+      const overlapEnd = endMoment ? endMoment.toDate() : currentShift.endTime;
 
       const overlap = await Shift.findOne({
         _id: { $ne: req.params.id },
         assignedGuards: { $in: assignedGuards },
         isActive: true,
         startTime: { $lt: overlapEnd },
-        endTime: { $gt: overlapStart }
+        endTime: { $gt: overlapStart },
       });
 
       if (overlap) {
-        return res.status(400).json(new ApiResponse(false, "One or more guards already have an overlapping shift"));
+        return res
+          .status(400)
+          .json(
+            new ApiResponse(
+              false,
+              "One or more guards already have an overlapping shift"
+            )
+          );
       }
     }
 
-    const updated = await Shift.findOneAndUpdate(filter, updateData, { new: true })
-      .populate("assignedGuards", "name email role");
+    const updated = await Shift.findOneAndUpdate(filter, updateData, {
+      new: true,
+    }).populate("assignedGuards", "name email role");
 
-    if (!updated) return res.status(404).json(new ApiResponse(false, "Shift not found"));
+    if (!updated) {
+      return res.status(404).json(new ApiResponse(false, "Shift not found"));
+    }
 
-    return res.status(200).json(new ApiResponse(true, "Shift updated", updated));
-
+    return res
+      .status(200)
+      .json(new ApiResponse(true, "Shift updated", updated));
   } catch (err) {
     console.error("Error updating shift:", err);
     return res.status(500).json(new ApiResponse(false, err.message));

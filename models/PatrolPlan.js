@@ -1,65 +1,6 @@
 const mongoose = require("mongoose");
 
-// const patrolPlanSchema = new mongoose.Schema({
-//   planName: { 
-//     type: String, 
-//     required: true 
-//   },
-//   description: { 
-//     type: String 
-//   },
-//   checkpoints: [{
-//     qrId: { 
-//       type: mongoose.Schema.Types.ObjectId, 
-//       ref: "QR",
-//       required: true 
-//     },
-//     siteId: { 
-//       type: String 
-//     },
-//     expectedTime: { 
-//       type: Number
-//     },
-//     isCompleted: { 
-//       type: Boolean, 
-//       default: false 
-//     },
-//     completedAt: { 
-//       type: Date 
-//     }
-//   }],
-//   assignedGuards: [{
-//     type: mongoose.Schema.Types.ObjectId,
-//     ref: "User"
-//   }],
 
-//     assignedShifts: [{
-//       type: mongoose.Schema.Types.ObjectId,
-//       ref: "Shift"
-//     }],
-//   frequency: {
-//     type: String,
-//     enum: ["daily", "weekly", "monthly"],
-//     default: "daily"
-//   },
-//   isActive: { 
-//     type: Boolean, 
-//     default: true 
-//   },
-
-//     shift: {
-//     type: mongoose.Schema.Types.ObjectId,
-//     ref: "Shift",
-//     required: true
-//   },
-
-//   createdBy: { 
-//     type: mongoose.Schema.Types.ObjectId, 
-//     ref: "User" 
-//   }
-// }, { timestamps: true });
-
-// module.exports = mongoose.model("PatrolPlan", patrolPlanSchema);
 
 const patrolPlanSchema = new mongoose.Schema(
   {

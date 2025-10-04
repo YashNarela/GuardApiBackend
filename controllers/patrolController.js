@@ -18,6 +18,7 @@ const { log } = require("console");
 
 
 
+const moment = require("moment-timezone");
 
 
 
@@ -1228,12 +1229,13 @@ exports.getPatrolLogs = async (req, res) => {
 
 
 
+
+
 exports.getGuardPerformanceReport = async (req, res) => {
   try {
+    console.log("Generating guard performance report", req.body);
 
-    console.log('dsdssdsd', req.body);
-    
-    const { guardId, startDate, endDate } = req.body;
+    const { guardId, startDate, endDate, shiftId } = req.body;
 
     if (!guardId)
       return res.status(400).json(new ApiResponse(false, "Guard ID required"));
@@ -1258,32 +1260,234 @@ exports.getGuardPerformanceReport = async (req, res) => {
         .status(403)
         .json(new ApiResponse(false, "No access to this guard"));
 
-    // Date range
+    // Date range with moment.js - FIXED for partial dates
     let start, end;
-    if (startDate && endDate) {
-      start = new Date(startDate);
-      end = new Date(endDate);
+    if (startDate) {
+      // If only start date is provided
+      start = moment(startDate).startOf("day").toDate();
+
+      if (endDate) {
+        // Both start and end dates provided
+        end = moment(endDate).endOf("day").toDate();
+      } else {
+        // Only start date provided - set end date to same day
+        end = moment(startDate).endOf("day").toDate();
+      }
+    } else if (endDate) {
+      // Only end date provided
+      end = moment(endDate).endOf("day").toDate();
+      start = moment(endDate).startOf("day").toDate(); // Set start to same day
     } else {
-      // Default to last 30 days
-      end = new Date();
-      start = new Date();
-      start.setDate(start.getDate() - 30);
+      // No dates provided - default to last 30 days
+      end = moment().endOf("day").toDate();
+      start = moment().subtract(30, "days").startOf("day").toDate();
     }
-    start.setHours(0, 0, 0, 0);
-    end.setHours(23, 59, 59, 999);
 
-    console.log(`📊 Generating detailed report for guard ${guardId}`);
+    console.log(
+      `📊 Generating detailed report for guard ${guardId} from ${start} to ${end}`
+    );
+    console.log(`Frontend dates - start: ${startDate}, end: ${endDate}`);
+    console.log(`Processed dates - start: ${start}, end: ${end}`);
 
-    // 1. ATTENDANCE - Simple login-based attendance
+    // Calculate total days correctly
+    const totalDays = moment(end).diff(moment(start), "days") + 1;
+
+    // Build query for patrol scans
+    const scanQuery = {
+      guard: guardId,
+      createdAt: { $gte: start, $lte: end },
+    };
+
+    // Add shift filter if provided
+    if (shiftId) {
+      scanQuery.shift = shiftId;
+    }
+
+    // 1. GET ALL PATROL SCANS WITH DETAILED INFORMATION
+    const patrolScans = await Patrol.find(scanQuery)
+      .populate("patrolPlanId", "planName rounds")
+      .populate("qrCodeId", "siteId description")
+      .populate("shift", "shiftName")
+      .sort({ createdAt: -1 });
+
+    console.log(`Found ${patrolScans.length} patrol scans`);
+
+    // 2. GET PATROL PLANS TO GET TOTAL ROUNDS INFORMATION
+    const patrolPlanIds = [
+      ...new Set(
+        patrolScans.map((scan) => scan.patrolPlanId?._id).filter(Boolean)
+      ),
+    ];
+
+    const patrolPlans = await PatrolPlan.find({
+      _id: { $in: patrolPlanIds },
+    }).populate("checkpoints.qrId", "siteId description");
+
+    // 3. SIMPLE ANALYSIS BASED ON ACTUAL SCAN DATA
+    const roundsData = {};
+    let totalCompletedRounds = 0;
+    let totalExpectedRounds = 0;
+    let totalCompletedScans = 0;
+    let totalExpectedScans = 0;
+
+    // Calculate based on patrol plans
+    patrolPlans.forEach((plan) => {
+      const planId = plan._id.toString();
+      const planRounds = plan.rounds || 1;
+      const planCheckpoints = plan.checkpoints.length;
+
+      totalExpectedRounds += planRounds;
+      totalExpectedScans += planRounds * planCheckpoints;
+
+      // Initialize rounds data for this plan
+      roundsData[planId] = {
+        planName: plan.planName,
+        totalRounds: planRounds,
+        totalCheckpoints: planCheckpoints,
+        completedRounds: 0,
+        completedScans: 0,
+        rounds: {},
+      };
+    });
+
+    // Group scans by plan and round number
+    patrolScans.forEach((scan) => {
+      const planId = scan.patrolPlanId?._id?.toString();
+      const roundNumber = scan.roundNumber || 1;
+
+      if (!planId || !roundsData[planId]) return;
+
+      const roundKey = `round_${roundNumber}`;
+
+      if (!roundsData[planId].rounds[roundKey]) {
+        roundsData[planId].rounds[roundKey] = {
+          roundNumber: roundNumber,
+          scans: [],
+          completedCheckpoints: 0,
+          isComplete: false,
+        };
+      }
+
+      // Add scan if not already recorded for this checkpoint
+      const existingScan = roundsData[planId].rounds[roundKey].scans.find(
+        (s) => s.qrCodeId?.toString() === scan.qrCodeId?._id?.toString()
+      );
+
+      if (!existingScan) {
+        roundsData[planId].rounds[roundKey].scans.push({
+          scanId: scan._id,
+          siteId: scan.qrCodeId?.siteId,
+          checkpointName: scan.qrCodeId?.siteId,
+          checkpointDescription: scan.qrCodeId?.description,
+          actualTime: scan.createdAt,
+          distanceMeters: scan.distanceMeters,
+          isVerified: scan.isVerified,
+        });
+
+        roundsData[planId].rounds[roundKey].completedCheckpoints++;
+
+        // Check if round is complete
+        const totalCheckpoints = roundsData[planId].totalCheckpoints;
+        if (
+          roundsData[planId].rounds[roundKey].completedCheckpoints >=
+          totalCheckpoints
+        ) {
+          roundsData[planId].rounds[roundKey].isComplete = true;
+          roundsData[planId].completedRounds++;
+          totalCompletedRounds++;
+        }
+
+        roundsData[planId].completedScans++;
+        totalCompletedScans++;
+      }
+    });
+
+    // 4. CREATE DETAILED ROUNDS DATA FOR TABLE
+    const detailedRoundsData = [];
+
+    Object.values(roundsData).forEach((planData) => {
+      Object.values(planData.rounds).forEach((round) => {
+        round.scans.forEach((scan) => {
+          detailedRoundsData.push({
+            date: moment(scan.actualTime).format("YYYY-MM-DD"),
+            roundNumber: round.roundNumber,
+            planName: planData.planName,
+            checkpointName: scan.checkpointName,
+            checkpointDescription: scan.checkpointDescription,
+            actualTime: scan.actualTime,
+            status: "completed",
+            scanId: scan.scanId,
+            distanceMeters: scan.distanceMeters,
+            isVerified: scan.isVerified,
+          });
+        });
+
+        // Add missed checkpoints for incomplete rounds
+        if (!round.isComplete) {
+          const scannedSiteIds = round.scans.map((s) => s.siteId);
+          const patrolPlan = patrolPlans.find(
+            (p) =>
+              p._id.toString() ===
+              Object.keys(roundsData).find(
+                (key) => roundsData[key].planName === planData.planName
+              )
+          );
+
+          if (patrolPlan) {
+            patrolPlan.checkpoints.forEach((checkpoint) => {
+              const siteId = checkpoint.qrId.siteId;
+              if (!scannedSiteIds.includes(siteId)) {
+                detailedRoundsData.push({
+                  date: round.scans[0]
+                    ? moment(round.scans[0].actualTime).format("YYYY-MM-DD")
+                    : moment().format("YYYY-MM-DD"),
+                  roundNumber: round.roundNumber,
+                  planName: planData.planName,
+                  checkpointName: siteId,
+                  checkpointDescription: checkpoint.qrId.description,
+                  actualTime: null,
+                  status: "missed",
+                  scanId: null,
+                });
+              }
+            });
+          }
+        }
+      });
+    });
+
+    // Sort detailed data
+    detailedRoundsData.sort((a, b) => {
+      if (a.date === b.date) {
+        if (a.roundNumber === b.roundNumber) {
+          return a.checkpointName.localeCompare(b.checkpointName);
+        }
+        return a.roundNumber - b.roundNumber;
+      }
+      return new Date(b.date) - new Date(a.date);
+    });
+
+    // 5. CALCULATE PERFORMANCE METRICS - SIMPLE AND ACCURATE
+    const missedRounds = totalExpectedRounds - totalCompletedRounds;
+    const missedScans = totalExpectedScans - totalCompletedScans;
+
+    const roundsCompletionRate =
+      totalExpectedRounds > 0
+        ? (totalCompletedRounds / totalExpectedRounds) * 100
+        : 0;
+
+    const scanCompletionRate =
+      totalExpectedScans > 0
+        ? (totalCompletedScans / totalExpectedScans) * 100
+        : 0;
+
+    // 6. GET ATTENDANCE DATA (optional)
     const attendanceRecords = await Attendance.find({
       guard: guardId,
       date: { $gte: start, $lte: end },
-    })
-      .populate("shift", "shiftName startTime endTime")
-      .sort({ date: -1 });
+    });
 
-    // Calculate attendance summary
-    const totalDays = attendanceRecords.length;
+    const attendanceTotalDays = attendanceRecords.length;
     const presentDays = attendanceRecords.filter(
       (record) =>
         record.status === "present" ||
@@ -1291,205 +1495,11 @@ exports.getGuardPerformanceReport = async (req, res) => {
         record.status === "late"
     ).length;
 
-    const absentDays = totalDays - presentDays;
-    const lateDays = attendanceRecords.filter(
-      (record) => record.status === "late"
-    ).length;
+    const attendanceRate =
+      attendanceTotalDays > 0 ? (presentDays / attendanceTotalDays) * 100 : 0;
 
-    // 2. GET ALL PATROL SCANS WITH DETAILED INFORMATION
-    const patrolScans = await Patrol.find({
-      guard: guardId,
-      createdAt: { $gte: start, $lte: end },
-    })
-      .populate("patrolPlanId", "planName rounds")
-      .populate("qrCodeId", "siteId description location latitude longitude")
-      .sort({ createdAt: -1 });
-
-    // 3. GET ALL PATROL PLANS ASSIGNED TO THIS GUARD
-    const patrolPlans = await PatrolPlan.find({
-      "assignedGuards.guardId": guardId,
-      isActive: true,
-    }).populate(
-      "checkpoints.qrId",
-      "siteId description location latitude longitude"
-    );
-
-    // 4. CREATE DETAILED ROUNDS TABLE DATA
-    const detailedRoundsData = [];
-    let totalExpectedRounds = 0;
-    let totalCompletedRounds = 0;
-    let totalMissedRounds = 0;
-
-    // Process each patrol plan
-    for (const plan of patrolPlans) {
-      const planRounds = plan.rounds || 1;
-      const totalCheckpoints = plan.checkpoints.length;
-
-      // Calculate expected rounds for the report period
-      const planStart = new Date(
-        Math.max(plan.startDate.getTime(), start.getTime())
-      );
-      const planEnd = plan.endDate
-        ? new Date(Math.min(plan.endDate.getTime(), end.getTime()))
-        : end;
-
-      const totalPlanDays =
-        Math.ceil((planEnd - planStart) / (1000 * 60 * 60 * 24)) + 1;
-      const planExpectedRounds = totalPlanDays * planRounds;
-      totalExpectedRounds += planExpectedRounds;
-
-      // Process each day and round
-      for (let day = 0; day < totalPlanDays; day++) {
-        const currentDate = new Date(planStart);
-        currentDate.setDate(planStart.getDate() + day);
-
-        for (let roundNumber = 1; roundNumber <= planRounds; roundNumber++) {
-          const dayStart = new Date(currentDate);
-          dayStart.setHours(0, 0, 0, 0);
-          const dayEnd = new Date(currentDate);
-          dayEnd.setHours(23, 59, 59, 999);
-
-          // Find scans for this specific round and date
-          const roundScans = patrolScans.filter((scan) => {
-            const scanDate = new Date(scan.createdAt);
-            return (
-              scan.patrolPlanId?._id?.toString() === plan._id.toString() &&
-              scan.roundNumber === roundNumber &&
-              scanDate >= dayStart &&
-              scanDate <= dayEnd
-            );
-          });
-
-          // Process each checkpoint in the plan
-          for (const checkpoint of plan.checkpoints) {
-            const checkpointScan = roundScans.find(
-              (scan) =>
-                scan.qrCodeId?._id?.toString() ===
-                checkpoint.qrId._id.toString()
-            );
-
-            // Calculate expected time (you might want to adjust this logic based on your business rules)
-            const expectedTime = new Date(currentDate);
-            // Add some logic to calculate expected time based on round number and checkpoint order
-            expectedTime.setHours(8 + (roundNumber - 1) * 4); // Example: 8AM, 12PM, 4PM for rounds
-
-            detailedRoundsData.push({
-              date: new Date(currentDate),
-              roundNumber: roundNumber,
-              planName: plan.planName,
-              planId: plan._id,
-              checkpointName: checkpoint.qrId.siteId,
-              checkpointDescription: checkpoint.qrId.description,
-              location: checkpoint.qrId.location,
-              latitude: checkpoint.qrId.latitude,
-              longitude: checkpoint.qrId.longitude,
-              expectedTime: expectedTime,
-              actualTime: checkpointScan?.createdAt || null,
-              status: checkpointScan ? "completed" : "missed",
-              delay: checkpointScan
-                ? Math.round(
-                    (new Date(checkpointScan.createdAt) - expectedTime) /
-                      (1000 * 60)
-                  )
-                : null, // delay in minutes
-              scanId: checkpointScan?._id,
-            });
-          }
-
-          // Check if round is completed (all checkpoints scanned)
-          const roundCheckpoints = plan.checkpoints.length;
-          const scannedCheckpoints = roundScans.length;
-          const isRoundCompleted = scannedCheckpoints === roundCheckpoints;
-
-          if (isRoundCompleted) {
-            totalCompletedRounds++;
-          } else if (scannedCheckpoints > 0) {
-            // Partially completed round
-            totalCompletedRounds += scannedCheckpoints / roundCheckpoints;
-          } else {
-            totalMissedRounds++;
-          }
-        }
-      }
-    }
-
-    // Also include scans that don't belong to any active plan (orphaned scans)
-    const orphanedScans = patrolScans.filter(
-      (scan) =>
-        !patrolPlans.some(
-          (plan) => plan._id.toString() === scan.patrolPlanId?._id?.toString()
-        )
-    );
-
-    for (const scan of orphanedScans) {
-      detailedRoundsData.push({
-        date: new Date(scan.createdAt),
-        roundNumber: scan.roundNumber || 1,
-        planName: scan.patrolPlanId?.planName || "Unassigned Plan",
-        planId: scan.patrolPlanId?._id || null,
-        checkpointName: scan.qrCodeId?.siteId || "Unknown Checkpoint",
-        checkpointDescription: scan.qrCodeId?.description || "",
-        location: scan.qrCodeId?.location || "",
-        latitude: scan.qrCodeId?.latitude || null,
-        longitude: scan.qrCodeId?.longitude || null,
-        expectedTime: null,
-        actualTime: scan.createdAt,
-        status: "completed",
-        delay: null,
-        scanId: scan._id,
-        isOrphaned: true,
-      });
-    }
-
-    // Sort detailed data by date and round number
-    detailedRoundsData.sort((a, b) => {
-      if (a.date.getTime() === b.date.getTime()) {
-        return a.roundNumber - b.roundNumber;
-      }
-      return b.date.getTime() - a.date.getTime();
-    });
-
-    // 5. CALCULATE OVERALL PERFORMANCE
-    const attendanceRate = totalDays > 0 ? (presentDays / totalDays) * 100 : 0;
-    const roundsCompletionRate =
-      totalExpectedRounds > 0
-        ? (totalCompletedRounds / totalExpectedRounds) * 100
-        : 0;
-
-    // Simple performance score (50% attendance + 50% rounds completion)
-    const overallPerformance =
-      attendanceRate * 0.5 + roundsCompletionRate * 0.5;
-
-    // 6. GET TODAY'S STATUS
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
-    const todayAttendance = await Attendance.findOne({
-      guard: guardId,
-      date: { $gte: today, $lt: tomorrow },
-    }).populate("shift", "shiftName");
-
-    // 7. GET RECENT ACTIVITY SUMMARY
-    const lastWeek = new Date();
-    lastWeek.setDate(lastWeek.getDate() - 7);
-    lastWeek.setHours(0, 0, 0, 0);
-
-    const recentScans = patrolScans.filter(
-      (scan) => new Date(scan.createdAt) >= lastWeek
-    );
-
-    // Calculate performance metrics for the table
-    const completedScans = detailedRoundsData.filter(
-      (item) => item.status === "completed"
-    ).length;
-    const missedScans = detailedRoundsData.filter(
-      (item) => item.status === "missed"
-    ).length;
-    const totalScans = detailedRoundsData.length;
-    const scanCompletionRate =
-      totalScans > 0 ? (completedScans / totalScans) * 100 : 0;
+    // Overall performance (focus on rounds completion)
+    const overallPerformance = roundsCompletionRate;
 
     return res.status(200).json(
       new ApiResponse(true, "Guard performance report generated", {
@@ -1498,77 +1508,57 @@ exports.getGuardPerformanceReport = async (req, res) => {
           _id: guard._id,
           name: guard.name,
           phone: guard.phone,
-          currentStatus: todayAttendance?.status || "unknown",
-          currentShift: todayAttendance?.shift?.shiftName || "Not assigned",
         },
 
-        // Report Period
+        // Report Period - FIXED with correct totalDays
         reportPeriod: {
           startDate: start,
           endDate: end,
-          totalDays: Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1,
+          totalDays: totalDays, // Now correctly calculated
         },
 
-        // Attendance Summary
-        attendance: {
-          totalDays: totalDays,
-          presentDays: presentDays,
-          absentDays: absentDays,
-          lateDays: lateDays,
-          attendanceRate: attendanceRate.toFixed(2) + "%",
-        },
-
-        // Detailed Rounds Performance Data for Table
-        detailedRounds: detailedRoundsData,
-
-        // Rounds Performance Summary
+        // Rounds Performance Summary - SIMPLE AND ACCURATE
         roundsPerformance: {
           summary: {
             totalExpectedRounds: totalExpectedRounds,
-            totalCompletedRounds: Math.round(totalCompletedRounds),
-            totalMissedRounds: totalMissedRounds,
-            totalScans: totalScans,
-            completedScans: completedScans,
-            missedScans: missedScans,
-            completionRate: scanCompletionRate.toFixed(2) + "%",
-            roundsCompletionRate: roundsCompletionRate.toFixed(2) + "%",
+            totalCompletedRounds: totalCompletedRounds,
+            totalMissedRounds: missedRounds,
+            totalExpectedScans: totalExpectedScans,
+            totalCompletedScans: totalCompletedScans,
+            totalMissedScans: missedScans,
+            roundsCompletionRate: roundsCompletionRate.toFixed(1) + "%",
+            scanCompletionRate: scanCompletionRate.toFixed(1) + "%",
           },
-        },
-
-        // Overall Performance
-        performance: {
-          overallScore: overallPerformance.toFixed(2),
-          rating: getPerformanceRating(overallPerformance),
-          breakdown: {
-            attendanceScore: attendanceRate.toFixed(2),
-            roundsScore: roundsCompletionRate.toFixed(2),
-          },
-        },
-
-        // Recent Activity Summary
-        recentActivity: {
-          period: "Last 7 days",
-          totalRoundsScanned: recentScans.length,
-          scansBreakdown: recentScans.map((scan) => ({
-            date: scan.createdAt,
-            planName: scan.patrolPlanId?.planName || "Unassigned",
-            checkpoint: scan.qrCodeId?.siteId || "Unknown",
-            roundNumber: scan.roundNumber,
-            scanTime: scan.createdAt,
+          planBreakdown: Object.values(roundsData).map((plan) => ({
+            planName: plan.planName,
+            totalRounds: plan.totalRounds,
+            completedRounds: plan.completedRounds,
+            totalCheckpoints: plan.totalCheckpoints,
+            completedScans: plan.completedScans,
+            completionRate:
+              ((plan.completedRounds / plan.totalRounds) * 100).toFixed(1) +
+              "%",
           })),
         },
 
-        // Performance Summary
+        // Detailed Rounds Data
+        detailedRounds: detailedRoundsData,
+
+        // Overall Performance
+        performance: {
+          overallScore: overallPerformance.toFixed(1),
+          rating: getPerformanceRating(overallPerformance),
+          breakdown: {
+            roundsCompletionRate: roundsCompletionRate.toFixed(1),
+            scanCompletionRate: scanCompletionRate.toFixed(1),
+          },
+        },
+
+        // Simple Summary
         summary: {
+          progress: `${totalCompletedRounds}/${totalExpectedRounds} rounds completed`,
+          efficiency: roundsCompletionRate.toFixed(1) + "%",
           status: overallPerformance >= 70 ? "Good" : "Needs Improvement",
-          strength: presentDays > 0 ? "Regular Attendance" : "New Guard",
-          areaToImprove:
-            roundsCompletionRate < 80
-              ? "Complete more patrol rounds"
-              : "Maintain current performance",
-          totalCheckpoints: totalScans,
-          completedCheckpoints: completedScans,
-          efficiency: scanCompletionRate.toFixed(1) + "%",
         },
       })
     );
@@ -1578,15 +1568,16 @@ exports.getGuardPerformanceReport = async (req, res) => {
   }
 };
 
-// Helper function to calculate performance rating
+// Helper function for performance rating
 function getPerformanceRating(score) {
-  if (score >= 90) return "Excellent";
-  if (score >= 80) return "Very Good";
-  if (score >= 70) return "Good";
-  if (score >= 60) return "Average";
-  if (score >= 50) return "Below Average";
-  return "Needs Improvement";
+  const numericScore = parseFloat(score) || 0;
+  if (numericScore >= 90) return "Excellent";
+  if (numericScore >= 80) return "Good";
+  if (numericScore >= 70) return "Satisfactory";
+  if (numericScore >= 60) return "Needs Improvement";
+  return "Poor";
 }
+
 exports.getPatrolSummary = async (req, res) => {
   try {
     const match = {};
@@ -1725,195 +1716,26 @@ exports.getGuardDashboard = async (req, res) => {
 
 
 
-// exports.getShiftQRCodes = async (req, res) => {
-//   try {
-//     const guardId = new mongoose.Types.ObjectId(req.user.id)
-//     const now = new Date();
-
-//     console.log('now:', now.toISOString());
-
-//         const todayStart = new Date();
-//     todayStart.setHours(0, 0, 0, 0);
-
-//     const todayEnd = new Date(todayStart);
-//     todayEnd.setDate(todayEnd.getDate() + 1);
-
-
-//     // Find current active shift where guard is assigned
-//     // const currentShift = await Shift.findOne({
-//     //   assignedGuards: guardId,
-//     //   startTime: { $lte: now },
-//     //   endTime: { $gte: now },
-//     //   isActive: true,
-//     // });
-//    const currentShift = await Shift.findOne({
-//       assignedGuards: guardId,
-//       isActive: true,
-//       $or: [
-//         { startTime: { $lte: now }, endTime: { $gte: now } }, // exactly now
-//         { startTime: { $lt: todayEnd }, endTime: { $gte: todayStart } }, // any shift overlapping today
-//       ],
-//     }).sort({ startTime: 1 }); // pick earliest matching shift
-
-//     if (!currentShift) {
-//       return res
-//         .status(404)
-//         .json(new ApiResponse(false, "No active shift found"));
-//     }
-
-//     // Get patrol plans assigned to this guard for current shift
-//     const patrolPlans = await PatrolPlan.find({
-//       "assignedGuards.guardId": guardId,
-//       "assignedGuards.assignedShifts": currentShift._id,
-//       isActive: true,
-//     }).populate("checkpoints.qrId");
-
-//     // Prepare today's date for scan check
-//     const today = new Date();
-//     today.setHours(0, 0, 0, 0);
-//     const tomorrow = new Date(today);
-//     tomorrow.setDate(tomorrow.getDate() + 1);
-
-//     const qrCodes = [];
-
-//     for (const plan of patrolPlans) {
-//       for (const checkpoint of plan.checkpoints) {
-//         if (checkpoint.qrId) {
-//           const isScanned = await Patrol.findOne({
-//             guard: guardId,
-//             qrCodeId: checkpoint.qrId._id,
-//             createdAt: { $gte: today, $lt: tomorrow },
-//           });
-
-//           qrCodes.push({
-//             ...checkpoint.qrId.toObject(),
-//             planName: plan.planName,
-//             isCompleted: !!isScanned,
-//             expectedTime: checkpoint.expectedTime,
-//           });
-//         }
-//       }
-//     }
-
-//     return res.status(200).json(
-//       new ApiResponse(true, "QR codes for current shift", {
-//         shift: currentShift,
-//         qrCodes,
-//       })
-//     );
-//   } catch (err) {
-//     console.error("Error in getShiftQRCodes:", err);
-//     return res.status(500).json(new ApiResponse(false, err.message));
-//   }
-// };
-
-// Mark Patrol Plan Checkpoint as Complete
-
-// exports.getShiftQRCodes = async (req, res) => {
-//   try {
-//     const guardId = new mongoose.Types.ObjectId(req.user.id);
-//     const now = new Date(); // Always UTC with MongoDB
-
-//     console.log("Now (UTC):", now.toISOString());
-
-//     // Find current active shift where guard is assigned (works for any shift type)
-//     const currentShift = await Shift.findOne({
-//       assignedGuards: guardId,
-//       isActive: true,
-//       startTime: { $lte: now },
-//       endTime: { $gte: now },
-//     }).sort({ startTime: 1 });
-
-//     if (!currentShift) {
-//       return res
-//         .status(404)
-//         .json(
-//           new ApiResponse(
-//             false,
-//             "No active shift found for your account at this time. Please check your schedule or contact your supervisor if you believe this is an error.",
-//             null
-//           )
-//         );
-//     }
-
-//     // Get patrol plans assigned to this guard for current shift
-//     const patrolPlans = await PatrolPlan.find({
-//       "assignedGuards.guardId": guardId,
-//       "assignedGuards.assignedShifts": currentShift._id,
-//       isActive: true,
-//     }).populate("checkpoints.qrId");
-
-//     // Prepare today's date (UTC midnight)
-//     const today = new Date();
-//     today.setUTCHours(0, 0, 0, 0);
-//     const tomorrow = new Date(today);
-//     tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-
-//     const qrCodes = [];
-
-//     for (const plan of patrolPlans) {
-//       for (const checkpoint of plan.checkpoints) {
-//         if (checkpoint.qrId) {
-//           const isScanned = await Patrol.findOne({
-//             guard: guardId,
-//             qrCodeId: checkpoint.qrId._id,
-//             createdAt: { $gte: today, $lt: tomorrow },
-//           });
-
-//           qrCodes.push({
-//             ...checkpoint.qrId.toObject(),
-//             planName: plan.planName,
-//             isCompleted: !!isScanned,
-//             expectedTime: checkpoint.expectedTime,
-//           });
-//         }
-//       }
-//     }
-
-//     // No QR codes assigned for this shift
-//     if (qrCodes.length === 0) {
-//       return res
-//         .status(200)
-//         .json(
-//           new ApiResponse(
-//             true,
-//             "No checkpoints assigned for your current shift. Please check with your supervisor.",
-//             { shift: currentShift, qrCodes: [] }
-//           )
-//         );
-//     }
-
-//     // Success
-//     return res.status(200).json(
-//       new ApiResponse(true, "QR codes for current shift", {
-//         shift: currentShift,
-//         qrCodes,
-//       })
-//     );
-//   } catch (err) {
-//     console.error("Error in getShiftQRCodes:", err);
-//     return res.status(500).json(new ApiResponse(false, err.message));
-//   }
-// };
-
-
-
 
 // exports.getShiftQRCodes = async (req, res) => {
 //   try {
 //     const guardId = new mongoose.Types.ObjectId(req.user.id);
 //     const now = new Date();
 
+//     console.log('gyarf', guardId);
+    
+
 //     console.log("Now (UTC):", now.toISOString());
 
 //     // Find current active shift where guard is assigned
 //     const currentShift = await Shift.findOne({
 //       assignedGuards: guardId,
-//       isActive: true,
-//       startTime: { $lte: now },
-//       endTime: { $gte: now },
-//     }).sort({ startTime: 1 });
+//       // isActive: true,
+//       // startTime: { $lte: now },
+//       // endTime: { $gte: now },
+//     });
 
+//     // .sort({ startTime: 1 });
 //     if (!currentShift) {
 //       return res
 //         .status(404)
@@ -1936,18 +1758,23 @@ exports.getGuardDashboard = async (req, res) => {
 //     const qrCodes = [];
 
 //     for (const plan of patrolPlans) {
-//       // Get current round for this guard and plan
-//       const currentRound = await getCurrentRound(guardId, plan._id);
+//       // Get current round for this guard, plan, AND current shift
+//       const currentRound = await getCurrentRound(
+//         guardId,
+//         plan._id,
+//         currentShift._id
+//       );
 
-//       // Skip if all rounds are completed
+//       // Skip if all rounds are completed for this shift
 //       if (currentRound > plan.rounds) {
 //         continue;
 //       }
 
-//       // Get all scans in current round for this plan
+//       // Get all scans in current round for this plan AND shift
 //       const currentRoundScans = await Patrol.find({
 //         guard: guardId,
 //         patrolPlanId: plan._id,
+//         shift: currentShift._id, // CRITICAL: Only scans from current shift
 //         roundNumber: currentRound,
 //       });
 
@@ -1964,6 +1791,7 @@ exports.getGuardDashboard = async (req, res) => {
 //             expectedTime: checkpoint.expectedTime,
 //             currentRound: currentRound,
 //             totalRounds: plan.rounds,
+//             progress: `${scannedQRIds.length}/${plan.checkpoints.length}`,
 //           });
 //         }
 //       }
@@ -1995,71 +1823,24 @@ exports.getGuardDashboard = async (req, res) => {
 //   }
 // };
 
-// Helper function to calculate current round
-
-
-
-
-
-// async function getCurrentRound(guardId, patrolPlanId) {
-//   const plan = await PatrolPlan.findById(patrolPlanId);
-//   const totalCheckpoints = plan.checkpoints.length;
-
-//   // Get all scans for this guard and plan, sorted by creation time
-//   const allScans = await Patrol.find({
-//     guard: guardId,
-//     patrolPlanId: patrolPlanId,
-//   }).sort({ createdAt: 1 });
-
-//   if (allScans.length === 0) {
-//     return 1; // Start with round 1 if no scans
-//   }
-
-//   // Group scans by round number
-//   const scansByRound = {};
-//   allScans.forEach((scan) => {
-//     const roundNum = scan.roundNumber || 1;
-//     if (!scansByRound[roundNum]) scansByRound[roundNum] = [];
-//     scansByRound[roundNum].push(scan);
-//   });
-
-//   // Find rounds in order
-//   const roundNumbers = Object.keys(scansByRound)
-//     .map(Number)
-//     .sort((a, b) => a - b);
-
-//   // Find the first incomplete round
-//   for (const roundNum of roundNumbers) {
-//     const scansInRound = scansByRound[roundNum];
-//     if (scansInRound.length < totalCheckpoints) {
-//       return roundNum; // Return this incomplete round
-//     }
-//   }
-
-//   // All existing rounds are complete, check if we can start a new round
-//   const lastRound = roundNumbers[roundNumbers.length - 1];
-//   return lastRound < plan.rounds ? lastRound + 1 : lastRound;
-// }
-
 exports.getShiftQRCodes = async (req, res) => {
   try {
     const guardId = new mongoose.Types.ObjectId(req.user.id);
-    const now = new Date();
+    const now = moment().utc(); // Use moment.js for consistent time handling
 
-    console.log('gyarf', guardId);
-    
-
-    console.log("Now (UTC):", now.toISOString());
+    console.log("Guard ID:", guardId);
+    console.log("Now (UTC):", now.format());
 
     // Find current active shift where guard is assigned
     const currentShift = await Shift.findOne({
       assignedGuards: guardId,
       // isActive: true,
-      // startTime: { $lte: now },
-      // endTime: { $gte: now },
-    });
+ 
+    }).sort({ startTime: 1 });
 
-    // .sort({ startTime: 1 });
+       startTime: { $lte: now.toDate() } // Convert moment to Date for MongoDB query
+      endTime: { $gte: now.toDate() } // Convert moment to Date for MongoDB query
+
     if (!currentShift) {
       return res
         .status(404)
@@ -2072,16 +1853,38 @@ exports.getShiftQRCodes = async (req, res) => {
         );
     }
 
+    console.log("Found shift:", {
+      shiftName: currentShift.shiftName,
+      startTime: currentShift.startTime,
+      endTime: currentShift.endTime,
+      isActive: currentShift.isActive,
+    });
+
     // Get patrol plans assigned to this guard for current shift
     const patrolPlans = await PatrolPlan.find({
       "assignedGuards.guardId": guardId,
       "assignedGuards.assignedShifts": currentShift._id,
       isActive: true,
+      // Additional check: ensure plan is active during current time
+      $or: [{ startDate: { $lte: now.toDate() } }, { startDate: null }],
+      $or: [{ endDate: { $gte: now.toDate() } }, { endDate: null }],
     }).populate("checkpoints.qrId");
 
     const qrCodes = [];
 
     for (const plan of patrolPlans) {
+      // Additional time-based plan validation
+      const planStart = plan.startDate ? moment.utc(plan.startDate) : null;
+      const planEnd = plan.endDate ? moment.utc(plan.endDate) : null;
+
+      // Skip if plan has date restrictions and current time is outside them
+      if (planStart && now.isBefore(planStart)) {
+        continue;
+      }
+      if (planEnd && now.isAfter(planEnd)) {
+        continue;
+      }
+
       // Get current round for this guard, plan, AND current shift
       const currentRound = await getCurrentRound(
         guardId,
@@ -2123,21 +1926,30 @@ exports.getShiftQRCodes = async (req, res) => {
 
     // No QR codes assigned for this shift
     if (qrCodes.length === 0) {
-      return res
-        .status(200)
-        .json(
-          new ApiResponse(
-            true,
-            "No checkpoints assigned for your current shift. Please check with your supervisor.",
-            { shift: currentShift, qrCodes: [] }
-          )
-        );
+      return res.status(200).json(
+        new ApiResponse(
+          true,
+          "No checkpoints assigned for your current shift. Please check with your supervisor.",
+          {
+            shift: {
+              ...currentShift.toObject(),
+              currentTime: now.format(),
+              timezone: "UTC",
+            },
+            qrCodes: [],
+          }
+        )
+      );
     }
 
     // Success
     return res.status(200).json(
       new ApiResponse(true, "QR codes for current shift", {
-        shift: currentShift,
+        shift: {
+          ...currentShift.toObject(),
+          currentTime: now.format(),
+          timezone: "UTC",
+        },
         qrCodes,
       })
     );
@@ -2147,352 +1959,8 @@ exports.getShiftQRCodes = async (req, res) => {
   }
 };
 
-// UPDATED Helper function to calculate current round - SHIFT SPECIFIC
 
-// exports.getShiftQRCodes = async (req, res) => {
-//   try {
-//     const guardId = new mongoose.Types.ObjectId(req.user.id);
-//     const now = new Date();
 
-//     console.log("Now (UTC):", now.toISOString());
-//     console.log("=== DEBUG getShiftQRCodes ===");
-//     console.log("Guard ID:", guardId.toString());
-//     console.log("Current Time (UTC):", now.toISOString());
-//     console.log("Current Time (Local):", now.toString());
-
-//     // Find current active shift where guard is assigned
-//     const currentShift = await Shift.findOne({
-//       assignedGuards: guardId,
-//       isActive: true,
-//       startTime: { $lte: now },
-//       endTime: { $gte: now },
-//     }).sort({ startTime: 1 });
-
-//     if (!currentShift) {
-//       console.log("❌ No active shift found for guard");
-//       return res
-//         .status(404)
-//         .json(
-//           new ApiResponse(
-//             false,
-//             "No active shift found for your account at this time. Please check your schedule or contact your supervisor if you believe this is an error.",
-//             null
-//           )
-//         );
-//     }
-
-//     console.log("✅ Found active shift:", {
-//       shiftId: currentShift._id.toString(),
-//       shiftName: currentShift.shiftName,
-//       startTime: currentShift.startTime,
-//       endTime: currentShift.endTime,
-//       assignedGuards: currentShift.assignedGuards,
-//     });
-
-//     // DEBUG: Check if guard is in assignedGuards
-//     const isGuardAssigned = currentShift.assignedGuards.some(
-//       (gid) => gid.toString() === guardId.toString()
-//     );
-//     console.log(
-//       `🔍 Guard ${guardId.toString()} assigned to shift: ${isGuardAssigned}`
-//     );
-
-//     // Get patrol plans assigned to this guard for current shift
-//     const patrolPlans = await PatrolPlan.find({
-//       "assignedGuards.guardId": guardId,
-//       "assignedGuards.assignedShifts": currentShift._id,
-//       isActive: true,
-//     }).populate("checkpoints.qrId");
-
-//         console.log(`📋 Found ${patrolPlans.length} patrol plans`);
-//     const qrCodes = [];
-
-//     for (const plan of patrolPlans) {
-//       // --- SHIFT-SPECIFIC ROUND LOGIC (Same as scanQR) ---
-//       const totalCheckpoints = plan.checkpoints.length;
-
-//       // Get all scans for this guard, patrol plan, AND current shift
-//       const allScans = await Patrol.find({
-//         guard: guardId,
-//         patrolPlanId: plan._id,
-//         shift: currentShift._id, // CRITICAL: Only scans from current shift
-//       }).sort({ createdAt: 1 });
-
-//         console.log(`   📊 Found ${allScans.length} scans in current shift`);
-//       // Determine current round number (shift-specific)
-//       let currentRound = 1;
-//       let scansInCurrentRound = [];
-
-//       if (allScans.length > 0) {
-//         // Group scans by round number stored in DB
-//         const scansByRound = {};
-//         allScans.forEach((scan) => {
-//           const rNum = scan.roundNumber || 1;
-//           if (!scansByRound[rNum]) scansByRound[rNum] = [];
-//           scansByRound[rNum].push(scan);
-//         });
-
-//         // Find the latest incomplete round or start a new one
-//         const roundNumbers = Object.keys(scansByRound)
-//           .map(Number)
-//           .sort((a, b) => a - b);
-
-//         for (const rNum of roundNumbers) {
-//           const scansInRound = scansByRound[rNum];
-//           if (scansInRound.length < totalCheckpoints) {
-//             // This round is incomplete
-//             currentRound = rNum;
-//             scansInCurrentRound = scansInRound;
-//             break;
-//           } else if (rNum === roundNumbers[roundNumbers.length - 1]) {
-//             // Last round is complete, start new round
-//             currentRound = rNum + 1;
-//             scansInCurrentRound = [];
-//           }
-//         }
-//       }
-
-//       // Skip if all rounds are completed for this shift
-//       if (currentRound > plan.rounds) {
-//         continue;
-//       }
-
-//       // Get checkpoint IDs already scanned in current round
-//       const scannedCheckpointIds = scansInCurrentRound.map((scan) =>
-//         scan.qrCodeId.toString()
-//       );
-
-//       for (const checkpoint of plan.checkpoints) {
-//         if (checkpoint.qrId) {
-//           qrCodes.push({
-//             ...checkpoint.qrId.toObject(),
-//             planName: plan.planName,
-//             isCompleted: scannedCheckpointIds.includes(
-//               checkpoint.qrId._id.toString()
-//             ),
-//             expectedTime: checkpoint.expectedTime,
-//             currentRound: currentRound,
-//             totalRounds: plan.rounds,
-//             progress: `${scannedCheckpointIds.length}/${totalCheckpoints}`,
-//           });
-//         }
-//       }
-//     }
-
-//     // No QR codes assigned for this shift
-//     if (qrCodes.length === 0) {
-//       return res
-//         .status(200)
-//         .json(
-//           new ApiResponse(
-//             true,
-//             "No checkpoints assigned for your current shift. Please check with your supervisor.",
-//             { shift: currentShift, qrCodes: [] }
-//           )
-//         );
-//     }
-
-//     // Success
-//     return res.status(200).json(
-//       new ApiResponse(true, "QR codes for current shift", {
-//         shift: currentShift,
-//         qrCodes,
-//       })
-//     );
-//   } catch (err) {
-//     console.error("Error in getShiftQRCodes:", err);
-//     return res.status(500).json(new ApiResponse(false, err.message));
-//   }
-// };
-
-// exports.getShiftQRCodes = async (req, res) => {
-//   try {
-//     const guardId = new mongoose.Types.ObjectId(req.user.id);
-//     const now = new Date();
-
-//     console.log("=== DEBUG getShiftQRCodes ===");
-//     console.log("Guard ID:", guardId.toString());
-//     console.log("Current Time (UTC):", now.toISOString());
-
-//     // Find current active shift where guard is assigned
-//     const currentShift = await Shift.findOne({
-//       assignedGuards: guardId,
-//       isActive: true,
-//       startTime: { $lte: now },
-//       endTime: { $gte: now },
-//     }).sort({ startTime: 1 });
-
-//     if (!currentShift) {
-//       console.log("❌ No active shift found for guard");
-//       return res
-//         .status(404)
-//         .json(
-//           new ApiResponse(
-//             false,
-//             "No active shift found for your account at this time. Please check your schedule or contact your supervisor if you believe this is an error.",
-//             null
-//           )
-//         );
-//     }
-
-//     console.log("✅ Found active shift:", currentShift.shiftName);
-//     console.log("🔍 Shift ID:", currentShift._id.toString());
-
-//     // FIXED: Use $elemMatch for proper array querying
-//     const patrolPlans = await PatrolPlan.find({
-//       assignedGuards: {
-//         $elemMatch: {
-//           guardId: guardId,
-//           assignedShifts: currentShift._id,
-//         },
-//       },
-//       isActive: true,
-//     }).populate("checkpoints.qrId");
-
-//     console.log(`\n🎯 Found patrol plans: ${patrolPlans.length}`);
-
-//     const qrCodes = [];
-
-//     for (const plan of patrolPlans) {
-//       console.log(`\n🔄 Processing plan: ${plan.planName}`);
-//       console.log(`   Plan rounds: ${plan.rounds}`);
-//       console.log(`   Checkpoints: ${plan.checkpoints.length}`);
-
-//       // --- SHIFT-SPECIFIC ROUND LOGIC ---
-//       const totalCheckpoints = plan.checkpoints.length;
-
-//       // Get all scans for this guard, patrol plan, AND current shift
-//       const allScans = await Patrol.find({
-//         guard: guardId,
-//         patrolPlanId: plan._id,
-//         shift: currentShift._id,
-//       }).sort({ createdAt: 1 });
-
-//       console.log(`   📊 Found ${allScans.length} scans in current shift`);
-
-//       // Determine current round number (shift-specific)
-//       let currentRound = 1;
-//       let scansInCurrentRound = [];
-
-//       if (allScans.length > 0) {
-//         // Group scans by round number stored in DB
-//         const scansByRound = {};
-//         allScans.forEach((scan) => {
-//           const rNum = scan.roundNumber || 1;
-//           if (!scansByRound[rNum]) scansByRound[rNum] = [];
-//           scansByRound[rNum].push(scan);
-//         });
-
-//         console.log(`   🔢 Scans by round:`, Object.keys(scansByRound));
-
-//         // Find the latest incomplete round or start a new one
-//         const roundNumbers = Object.keys(scansByRound)
-//           .map(Number)
-//           .sort((a, b) => a - b);
-
-//         console.log(`   📈 Round numbers:`, roundNumbers);
-
-//         for (const rNum of roundNumbers) {
-//           const scansInRound = scansByRound[rNum];
-//           console.log(
-//             `   🔍 Round ${rNum}: ${scansInRound.length}/${totalCheckpoints} scans`
-//           );
-
-//           if (scansInRound.length < totalCheckpoints) {
-//             // This round is incomplete
-//             currentRound = rNum;
-//             scansInCurrentRound = scansInRound;
-//             console.log(`   ✅ Using incomplete round ${currentRound}`);
-//             break;
-//           } else if (rNum === roundNumbers[roundNumbers.length - 1]) {
-//             // Last round is complete, start new round
-//             currentRound = rNum + 1;
-//             scansInCurrentRound = [];
-//             console.log(`   🔄 Starting new round ${currentRound}`);
-//           }
-//         }
-//       } else {
-//         console.log(`   🆕 Starting fresh at round ${currentRound}`);
-//       }
-
-//       console.log(`   🎯 Final current round: ${currentRound}`);
-
-//       // **CRITICAL FIX**: Don't show any QR codes if all rounds are completed
-//       if (currentRound > plan.rounds) {
-//         console.log(
-//           `   ⏹️  SKIPPING PLAN: All ${plan.rounds} rounds completed for this shift`
-//         );
-//         // **CHANGED**: Don't add any QR codes - just skip the entire plan
-//         continue;
-//       }
-
-//       // Get checkpoint IDs already scanned in current round
-//       const scannedCheckpointIds = scansInCurrentRound.map((scan) =>
-//         scan.qrCodeId.toString()
-//       );
-
-//       console.log(
-//         `   📍 Scanned in current round: ${scannedCheckpointIds.length} checkpoints`
-//       );
-
-//       // Add all checkpoints to QR codes
-//       for (const checkpoint of plan.checkpoints) {
-//         if (checkpoint.qrId) {
-//           const isCompleted = scannedCheckpointIds.includes(
-//             checkpoint.qrId._id.toString()
-//           );
-//           console.log(
-//             `   🎯 QR ${checkpoint.qrId.siteId}: completed=${isCompleted}`
-//           );
-
-//           qrCodes.push({
-//             ...checkpoint.qrId.toObject(),
-//             planName: plan.planName,
-//             isCompleted: isCompleted,
-//             expectedTime: checkpoint.expectedTime,
-//             currentRound: currentRound,
-//             totalRounds: plan.rounds,
-//             progress: `${scannedCheckpointIds.length}/${totalCheckpoints}`,
-//           });
-//         }
-//       }
-
-//       console.log(
-//         `   ✅ Added ${plan.checkpoints.length} QR codes from this plan`
-//       );
-//     }
-
-//     console.log(`\n📦 Final QR codes count: ${qrCodes.length}`);
-
-//     // No QR codes assigned for this shift
-//     if (qrCodes.length === 0) {
-//       console.log("❌ No QR codes found after processing all plans");
-//       return res
-//         .status(200)
-//         .json(
-//           new ApiResponse(
-//             true,
-//             "All patrol rounds completed for this shift. No more checkpoints available.",
-//             { shift: currentShift, qrCodes: [] }
-//           )
-//         );
-//     }
-
-//     console.log("✅ Successfully returning QR codes");
-//     console.log("=== END DEBUG ===");
-
-//     // Success
-//     return res.status(200).json(
-//       new ApiResponse(true, "QR codes for current shift", {
-//         shift: currentShift,
-//         qrCodes,
-//       })
-//     );
-//   } catch (err) {
-//     console.error("❌ Error in getShiftQRCodes:", err);
-//     return res.status(500).json(new ApiResponse(false, err.message));
-//   }
-// };
 async function getCurrentRound(guardId, patrolPlanId, shiftId) {
   const plan = await PatrolPlan.findById(patrolPlanId);
   const totalCheckpoints = plan.checkpoints.length;
