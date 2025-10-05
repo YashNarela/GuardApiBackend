@@ -22,6 +22,8 @@ const incidentSchema = new mongoose.Schema(
         "vandalism",
         "other",
       ],
+
+      default: "other"
       // required: true
     },
     severity: {

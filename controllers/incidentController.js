@@ -120,6 +120,109 @@ const mongoose=require("mongoose")
 
 
 
+// exports.reportIncident = async (req, res) => {
+//   try {
+//     let {
+//       title,
+//       description,
+//       type,
+//       severity = "medium",
+//       location,
+//       assignedTo = [],
+//     } = req.body;
+
+//     console.log("req.user", req.user);
+
+//     // Process uploaded files
+//     const photos = [];
+//     let video = null;
+
+//     console.log('req---files', req.files);
+    
+
+//     if (req.files && req.files.length > 0) {
+//       for (const file of req.files) {
+//         const fileData = await fs.readFile(file.path);
+//         const base64Data = fileData.toString("base64");
+
+//         if (file.mimetype.startsWith("image")) {
+//           photos.push(`data:${file.mimetype};base64,${base64Data}`);
+//         } else if (file.mimetype.startsWith("video")) {
+//           video = `data:${file.mimetype};base64,${base64Data}`;
+//         }
+
+//         // Remove temp file
+//         await fs
+//           .unlink(file.path)
+//           .catch((e) => console.warn("File cleanup failed:", e.message));
+//       }
+//     }
+
+//     // Set defaults if missing
+//     if (!title) title = "Untitled Incident";
+//     if (!description) description = "No description provided";
+//     if (!type) type =  "other" ;
+
+//     // Parse location
+//     let parsedLocation = null;
+//     if (location) {
+//       try {
+//         parsedLocation =
+//           typeof location === "string" ? JSON.parse(location) : location;
+//       } catch (e) {
+//         parsedLocation = null;
+//       }
+//     }
+
+//     // Get guard info
+//     const guard = await User.findById(req.user.id);
+
+//     // Assign supervisor or provided users
+//     let assignedToArray = [];
+//     if (assignedTo && assignedTo.length > 0) {
+//       assignedToArray = Array.isArray(assignedTo)
+//         ? assignedTo
+//         : JSON.parse(assignedTo);
+//     } else if (guard.supervisor) {
+//       assignedToArray = [guard.supervisor];
+//     }
+
+//     // Assign companyId
+//     const companyId = guard.companyId || null;
+
+//     // Create incident
+//     const incident = await Incident.create({
+//       title,
+//       description,
+//       type,
+//       severity,
+//       location: parsedLocation,
+//       reportedBy: req.user.id,
+//       assignedTo: assignedToArray,
+//       photos,
+//       video,
+//       status: "reported",
+//       companyId,
+//     });
+
+//     const populatedIncident = await Incident.findById(incident._id)
+//       .populate("reportedBy", "name email role")
+//       .populate("assignedTo", "name email role")
+//       .populate("companyId", "name email role");
+
+//     return res
+//       .status(201)
+//       .json(
+//         new ApiResponse(true, "Incident reported successfully", {
+//           incident: populatedIncident,
+//         })
+//       );
+//   } catch (err) {
+//     console.error(err);
+//     return res.status(500).json(new ApiResponse(false, err.message));
+//   }
+// };
+
 exports.reportIncident = async (req, res) => {
   try {
     let {
@@ -137,8 +240,7 @@ exports.reportIncident = async (req, res) => {
     const photos = [];
     let video = null;
 
-    console.log('req---files', req.files);
-    
+    console.log("req---files", req.files);
 
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
@@ -158,10 +260,10 @@ exports.reportIncident = async (req, res) => {
       }
     }
 
-    // Set defaults if missing
+    // Set defaults if missing - FIXED: Ensure type has a valid default
     if (!title) title = "Untitled Incident";
     if (!description) description = "No description provided";
-    if (!type) type = "general";
+    if (!type || type === "undefined") type = "other"; // Use valid enum value
 
     // Parse location
     let parsedLocation = null;
@@ -194,7 +296,7 @@ exports.reportIncident = async (req, res) => {
     const incident = await Incident.create({
       title,
       description,
-      type,
+      type, // Now this will always be a valid enum value
       severity,
       location: parsedLocation,
       reportedBy: req.user.id,
@@ -210,20 +312,16 @@ exports.reportIncident = async (req, res) => {
       .populate("assignedTo", "name email role")
       .populate("companyId", "name email role");
 
-    return res
-      .status(201)
-      .json(
-        new ApiResponse(true, "Incident reported successfully", {
-          incident: populatedIncident,
-        })
-      );
+    return res.status(201).json(
+      new ApiResponse(true, "Incident reported successfully", {
+        incident: populatedIncident,
+      })
+    );
   } catch (err) {
     console.error(err);
     return res.status(500).json(new ApiResponse(false, err.message));
   }
 };
-
-
 
 exports.getIncidents = async (req, res) => {
 
