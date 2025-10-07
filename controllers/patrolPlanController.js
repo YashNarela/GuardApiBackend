@@ -159,7 +159,7 @@ exports.createPatrolPlan = async (req, res) => {
     } = req.body;
 
 
-       console.log("req.user", req.user);
+       console.log("plan****req.user****pan", req.user);
     console.log("[CREATE] Received rounds:", rounds);
 
     // Validation
@@ -262,8 +262,8 @@ exports.createPatrolPlan = async (req, res) => {
       startDate: new Date(startDate),
       endDate: endDate ? new Date(endDate) : null,
       rounds,
-      companyId: req.user.companyId,
-      createdBy: req.user.id,
+      companyId: new mongoose.Types.ObjectId(req.user.companyId),
+      createdBy: new mongoose.Types.ObjectId(req.user.id),
     };
 
     console.log("[CREATE] Plan data to create:", planCreateData);
@@ -594,7 +594,7 @@ exports.getPatrolPlans = async (req, res) => {
 
     // Role-based access
 
-    console.log('req.user', req.user);
+    console.log('*****req.user*******', req.user);
     
 
     if (req.user.role === "guard") {

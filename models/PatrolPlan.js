@@ -79,6 +79,11 @@ const patrolPlanSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    companyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
 
     // Date range for the patrol plan
     startDate: {
