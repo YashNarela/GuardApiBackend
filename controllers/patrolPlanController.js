@@ -158,6 +158,8 @@ exports.createPatrolPlan = async (req, res) => {
       rounds = 1,
     } = req.body;
 
+
+       console.log("req.user", req.user);
     console.log("[CREATE] Received rounds:", rounds);
 
     // Validation
@@ -260,6 +262,7 @@ exports.createPatrolPlan = async (req, res) => {
       startDate: new Date(startDate),
       endDate: endDate ? new Date(endDate) : null,
       rounds,
+      companyId: req.user.companyId,
       createdBy: req.user.id,
     };
 
@@ -590,6 +593,10 @@ exports.getPatrolPlans = async (req, res) => {
     // const filter = { createdBy: req.user.id };
 
     // Role-based access
+
+    console.log('req.user', req.user);
+    
+
     if (req.user.role === "guard") {
       // Guards should only see plans they are assigned to
       filter = { "assignedGuards.guardId": req.user.id };

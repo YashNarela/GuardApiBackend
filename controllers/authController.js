@@ -497,9 +497,9 @@ exports.register = async (req, res) => {
       switch (req.user.role) {
         case "admin":
           createdBy = req.user.id;
-          companyId = null; // top-level
-          parent = null;
-          supervisor = null;
+          // companyId = null; // top-level
+          // parent = null;
+          // supervisor = null;
           break;
 
         case "employee":
@@ -543,6 +543,13 @@ exports.register = async (req, res) => {
     const user = await User.create(userData);
 
     // Update hierarchy arrays
+   if (req.user?.role === "admin" && role === "employee") {
+     await User.findByIdAndUpdate(user._id, { companyId: user._id });
+     user.companyId = user._id;
+   }
+
+
+
     if (role === "supervisor" && parent) {
       await User.findByIdAndUpdate(parent, {
         $push: { supervisors: user._id },
