@@ -126,6 +126,12 @@ const getActiveShifts = async (req, res) => {
       timezone = "UTC",
     } = req.body;
 
+
+    console.log('req.user***** shift', req.user);
+    
+    let companyId=  new mongoose.Types.ObjectId(req.user.companyId)
+
+
     // Validate required fields
     if (!shiftName || !startTime || !endTime) {
       return res.status(400).json({
@@ -174,6 +180,7 @@ const getActiveShifts = async (req, res) => {
       shiftType,
       assignedGuards,
       timezone,
+      companyId:companyId,
       createdBy: req.user.id,
     });
 
@@ -247,71 +254,6 @@ exports.deleteShift = async (req, res) => {
 
 
 
-// exports.updateShift = async (req, res) => {
-//   try {
-//     const { shiftName, startTime, endTime, shiftType, assignedGuards } = req.body;
-
-//     const filter = { _id: req.params.id };
-//     if (req.user.role === "supervisor") filter.createdBy = req.user.id;
-
-//     const updateData = {};
-//     const now = new Date();
-//     let newStart, newEnd;
-
-//     if (startTime) {
-//       newStart = new Date(startTime);
-//       if (isNaN(newStart)) return res.status(400).json(new ApiResponse(false, "Invalid start time format"));
-//       if (newStart < now) return res.status(400).json(new ApiResponse(false, "Shift start time cannot be in the past"));
-//       updateData.startTime = newStart.toISOString();
-//     }
-
-//     if (endTime) {
-//       newEnd = new Date(endTime);
-//       if (isNaN(newEnd)) return res.status(400).json(new ApiResponse(false, "Invalid end time format"));
-//       updateData.endTime = newEnd.toISOString();
-//     }
-
-//     // Validate end > start
-//     if (newStart && newEnd && newEnd <= newStart) {
-//       return res.status(400).json(new ApiResponse(false, "End time must be after start time"));
-//     }
-
-//     if (shiftType) updateData.shiftType = shiftType;
-//     if (assignedGuards?.length) updateData.assignedGuards = assignedGuards;
-
-//     // Overlap check
-//     if ((newStart || newEnd) && assignedGuards?.length) {
-//       const currentShift = await Shift.findById(req.params.id);
-//       if (!currentShift) return res.status(404).json(new ApiResponse(false, "Shift not found"));
-
-//       const overlapStart = newStart || currentShift.startTime;
-//       const overlapEnd = newEnd || currentShift.endTime;
-
-//       const overlap = await Shift.findOne({
-//         _id: { $ne: req.params.id },
-//         assignedGuards: { $in: assignedGuards },
-//         isActive: true,
-//         startTime: { $lt: overlapEnd },
-//         endTime: { $gt: overlapStart }
-//       });
-
-//       if (overlap) {
-//         return res.status(400).json(new ApiResponse(false, "One or more guards already have an overlapping shift"));
-//       }
-//     }
-
-//     const updated = await Shift.findOneAndUpdate(filter, updateData, { new: true })
-//       .populate("assignedGuards", "name email role");
-
-//     if (!updated) return res.status(404).json(new ApiResponse(false, "Shift not found"));
-
-//     return res.status(200).json(new ApiResponse(true, "Shift updated", updated));
-
-//   } catch (err) {
-//     console.error("Error updating shift:", err);
-//     return res.status(500).json(new ApiResponse(false, err.message));
-//   }
-// };
 
 
 exports.updateShift = async (req, res) => {

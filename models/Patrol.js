@@ -10,7 +10,11 @@ const patrolSchema = new mongoose.Schema(
     shift: { type: mongoose.Schema.Types.ObjectId, ref: "Shift" },
     qrCodeId: { type: mongoose.Schema.Types.ObjectId, ref: "QR" },
     roundNumber: { type: Number, required: true }, // ✅ controller sets this
-
+    companyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
     location: { lat: Number, lng: Number },
     distanceMeters: Number,
     photo: String,

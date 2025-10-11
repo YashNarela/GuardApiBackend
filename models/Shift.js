@@ -18,6 +18,13 @@ const shiftSchema = new mongoose.Schema(
       default: "UTC",
       required: true,
     },
+
+    companyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+
     shiftType: { type: String, enum: ["day", "night", "both"], default: "day" },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   },

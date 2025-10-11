@@ -66,29 +66,9 @@ exports.getEmployees = async (req, res) => {
   }
 };
 
-// Update Employee
-// exports.updateEmployee = async (req, res) => {
-//   try {
-//     const { name, email } = req.body;
-//     const updated = await User.findByIdAndUpdate(
-//       req.params.id,
-//       { name, email },
-//       { new: true }
-//     ).select("-password");
 
-//     if (!updated) {
-//       return res.status(404).json(new ApiResponse(false, "Employee not found"));
-//     }
 
-//     return res
-//       .status(200)
-//       .json(new ApiResponse(true, "Employee updated successfully", updated));
-//   } catch (err) {
-//     return res.status(500).json(new ApiResponse(false, err.message));
-//   }
-// };
 
-// Update Employee (with password support)
 exports.updateEmployee = async (req, res) => {
   try {
     const { name, email, password,phone } = req.body;
@@ -155,6 +135,9 @@ exports.updateGuard = async (req, res) => {
 // Delete Employee
 exports.deleteEmployee = async (req, res) => {
   try {
+
+    console.log('req from the admin', req.params.id);
+    
     const deleted = await User.findByIdAndDelete(req.params.id);
     if (!deleted) {
       return res.status(404).json(new ApiResponse(false, "Employee not found"));

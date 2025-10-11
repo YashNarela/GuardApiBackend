@@ -2,9 +2,9 @@
 const QR = require("../models/QR");
 const { generateQR } = require("../utils/qrGenerator");
 const ApiResponse = require("../utils/apiResponse");
-
+ const PatrolPlan = require("../models/PatrolPlan");
 const User=require("../models/User")
-
+const mongoose = require("mongoose");
 
 
 
@@ -185,10 +185,60 @@ exports.getAllQR = async (req, res) => {
 // DELETE /api/qr/:id (employee/admin)
 exports.deleteQR = async (req, res) => {
   try {
-    const qr = await QR.findByIdAndDelete(req.params.id);
-    if (!qr) {
-      return res.status(404).json(new ApiResponse(false, "QR not found"));
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res
+        .status(400)
+        .json(new ApiResponse(false, "Invalid QR ID format", null, 400));
     }
+
+    const existingQR = await QR.findById(id);
+    if (!existingQR) {
+      return res
+        .status(404)
+        .json(new ApiResponse(false, "QR code not found", null, 404));
+    }
+
+   
+    const updateResult = await PatrolPlan.updateMany(
+      { "checkpoints.qrId": id },
+      {
+        $pull: {
+          checkpoints: { qrId: id },
+        },
+      }
+    );
+
+    console.log(
+      `Removed checkpoints from ${updateResult.modifiedCount} patrol plans`
+    );
+
+
+          // Deactivate patrol plans with no checkpoints
+      const deactivatedPlans = await PatrolPlan.updateMany(
+        { 
+          "checkpoints": { $size: 0 },
+          "isActive": true
+        },
+        { 
+          $set: { "isActive": false } 
+        }
+      );
+
+      if (deactivatedPlans.modifiedCount > 0) {
+        console.log(`Deactivated ${deactivatedPlans.modifiedCount} patrol plans with no checkpoints`);
+      }
+    
+        let qrDeleted =await QR.findByIdAndDelete(id);
+
+
+
+
+    console.log("deleteing the Qr",qrDeleted);
+
+
+
     return res.status(200).json(new ApiResponse(true, "QR deleted"));
   } catch (err) {
     return res.status(500).json(new ApiResponse(false, err.message));

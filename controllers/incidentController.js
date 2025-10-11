@@ -6,222 +6,8 @@ const fs = require("fs").promises;
 const path = require("path");
 const { uploadDir } = require("../middleware/multer");
 const mongoose=require("mongoose")
+const QR=require("../models/QR")
 
-
-// exports.reportIncident = async (req, res) => {
-//   try {
-//     let {
-//       title,
-//       description,
-//       type,
-//       severity = "medium",
-//       location,
-//       assignedTo = [],
-//     } = req.body;
-
-//     console.log("req.user", req.user);
-
-//     // Process uploaded files
-//     const photos = [];
-//     let video = null;
-
-//     if (req.files && req.files.length > 0) {
-//       for (const file of req.files) {
-//         const filePath = path.join(uploadDir, file.filename);
-//         const fileData = await fs.readFile(filePath);
-//         const base64Data = fileData.toString("base64");
-
-//         if (file.mimetype.startsWith("image")) {
-//           photos.push(base64Data);
-//         } else if (file.mimetype.startsWith("video")) {
-//           video = base64Data;
-//         }
-
-//         // Clean up temp file
-//         await fs
-//           .unlink(filePath)
-//           .catch((e) => console.warn("File cleanup failed:", e.message));
-//       }
-//     }
-
-//     // ✅ Set defaults if missing
-//     if (!title) title = "Untitled Incident";
-//     if (!description) description = "No description provided";
-//     if (!type) type = "general"; // fallback type
-
-//     // ✅ Ensure at least some data exists
-//     if (!title && !description && !type && photos.length === 0 && !video) {
-//       return res
-//         .status(400)
-//         .json(new ApiResponse(false, "Incident cannot be empty"));
-//     }
-
-//     // Parse location
-//     let parsedLocation = null;
-//     if (location) {
-//       try {
-//         parsedLocation =
-//           typeof location === "string" ? JSON.parse(location) : location;
-//       } catch (e) {
-//         parsedLocation = null;
-//       }
-//     }
-
-//     // Get guard info
-//     const guard = await User.findById(req.user.id);
-
-//     // Assign supervisor or provided users
-//     let assignedToArray = [];
-//     if (assignedTo && assignedTo.length > 0) {
-//       assignedToArray = Array.isArray(assignedTo)
-//         ? assignedTo
-//         : JSON.parse(assignedTo);
-//     } else if (guard.supervisor) {
-//       assignedToArray = [guard.supervisor];
-//     }
-
-//     // 🚨 Assign companyId
-//     const companyId = guard.companyId || null;
-
-//     const incident = await Incident.create({
-//       title,
-//       description,
-//       type,
-//       severity,
-//       location: parsedLocation,
-//       reportedBy: req.user.id,
-//       assignedTo: assignedToArray,
-//       photos,
-//       video,
-//       status: "reported",
-//       companyId,
-//     });
-
-//     const populatedIncident = await Incident.findById(incident._id)
-//       .populate("reportedBy", "name email role")
-//       .populate("assignedTo", "name email role")
-//       .populate("companyId", "name email role");
-
-//     return res.status(201).json(
-//       new ApiResponse(true, "Incident reported successfully", {
-//         incident: populatedIncident,
-//       })
-//     );
-//   } catch (err) {
-//     console.error(err);
-//     return res.status(500).json(new ApiResponse(false, err.message));
-//   }
-// };
-
-
-
-
-// Get Incidents (Role-based access)
-
-
-
-// exports.reportIncident = async (req, res) => {
-//   try {
-//     let {
-//       title,
-//       description,
-//       type,
-//       severity = "medium",
-//       location,
-//       assignedTo = [],
-//     } = req.body;
-
-//     console.log("req.user", req.user);
-
-//     // Process uploaded files
-//     const photos = [];
-//     let video = null;
-
-//     console.log('req---files', req.files);
-    
-
-//     if (req.files && req.files.length > 0) {
-//       for (const file of req.files) {
-//         const fileData = await fs.readFile(file.path);
-//         const base64Data = fileData.toString("base64");
-
-//         if (file.mimetype.startsWith("image")) {
-//           photos.push(`data:${file.mimetype};base64,${base64Data}`);
-//         } else if (file.mimetype.startsWith("video")) {
-//           video = `data:${file.mimetype};base64,${base64Data}`;
-//         }
-
-//         // Remove temp file
-//         await fs
-//           .unlink(file.path)
-//           .catch((e) => console.warn("File cleanup failed:", e.message));
-//       }
-//     }
-
-//     // Set defaults if missing
-//     if (!title) title = "Untitled Incident";
-//     if (!description) description = "No description provided";
-//     if (!type) type =  "other" ;
-
-//     // Parse location
-//     let parsedLocation = null;
-//     if (location) {
-//       try {
-//         parsedLocation =
-//           typeof location === "string" ? JSON.parse(location) : location;
-//       } catch (e) {
-//         parsedLocation = null;
-//       }
-//     }
-
-//     // Get guard info
-//     const guard = await User.findById(req.user.id);
-
-//     // Assign supervisor or provided users
-//     let assignedToArray = [];
-//     if (assignedTo && assignedTo.length > 0) {
-//       assignedToArray = Array.isArray(assignedTo)
-//         ? assignedTo
-//         : JSON.parse(assignedTo);
-//     } else if (guard.supervisor) {
-//       assignedToArray = [guard.supervisor];
-//     }
-
-//     // Assign companyId
-//     const companyId = guard.companyId || null;
-
-//     // Create incident
-//     const incident = await Incident.create({
-//       title,
-//       description,
-//       type,
-//       severity,
-//       location: parsedLocation,
-//       reportedBy: req.user.id,
-//       assignedTo: assignedToArray,
-//       photos,
-//       video,
-//       status: "reported",
-//       companyId,
-//     });
-
-//     const populatedIncident = await Incident.findById(incident._id)
-//       .populate("reportedBy", "name email role")
-//       .populate("assignedTo", "name email role")
-//       .populate("companyId", "name email role");
-
-//     return res
-//       .status(201)
-//       .json(
-//         new ApiResponse(true, "Incident reported successfully", {
-//           incident: populatedIncident,
-//         })
-//       );
-//   } catch (err) {
-//     console.error(err);
-//     return res.status(500).json(new ApiResponse(false, err.message));
-//   }
-// };
 
 exports.reportIncident = async (req, res) => {
   try {
@@ -231,8 +17,45 @@ exports.reportIncident = async (req, res) => {
       type,
       severity = "medium",
       location,
+      qrId,
       assignedTo = [],
     } = req.body;
+
+    console.log("req---body", req.body);
+
+    let siteInfo = null;
+    let isFromQRScan = false;
+
+    if (qrId) {
+      try {
+        if (!mongoose.Types.ObjectId.isValid(qrId)) {
+          return res
+            .status(400)
+            .json(new ApiResponse(false, "Invalid QR ID format"));
+        }
+
+        const qrObjectId = new mongoose.Types.ObjectId(qrId);
+        const siteData = await QR.findById(qrObjectId);
+
+        console.log("site data is ", siteData);
+
+        if (siteData) {
+          siteInfo = {
+            siteId: siteData.siteId,
+            description: siteData.description,
+            lat: siteData.lat,
+            lng: siteData.lng,
+            radius: siteData.radius,
+          };
+
+          isFromQRScan = true; // Set to true since incident was created from QR scan
+        }
+      } catch (qrError) {
+        return res.status(500).json(new ApiResponse(false, qrError.message));
+      }
+    }
+
+
 
     console.log("req.user", req.user);
 
@@ -242,21 +65,79 @@ exports.reportIncident = async (req, res) => {
 
     console.log("req---files", req.files);
 
+    // if (req.files && req.files.length > 0) {
+    //   for (const file of req.files) {
+    //     const fileData = await fs.readFile(file.path);
+    //     const base64Data = fileData.toString("base64");
+
+    //     if (file.mimetype.startsWith("image")) {
+    //       photos.push(`data:${file.mimetype};base64,${base64Data}`);
+    //     } else if (file.mimetype.startsWith("video")) {
+
+    //            const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB
+    //            if (file.size > MAX_VIDEO_SIZE) {
+    //              await fs.unlink(file.path);
+    //              return res
+    //                .status(400)
+    //                .json(
+    //                  new ApiResponse(
+    //                    false,
+    //                    "Video file too large. Maximum size is 50MB"
+    //                  )
+    //                );
+    //            }
+
+    //       video = `data:${file.mimetype};base64,${base64Data}`;
+    //     }
+
+    //     // Remove temp file
+    //     await fs
+    //       .unlink(file.path)
+    //       .catch((e) => console.warn("File cleanup failed:", e.message));
+    //   }
+    // }
+    // Process uploaded files - Add error handling
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
-        const fileData = await fs.readFile(file.path);
-        const base64Data = fileData.toString("base64");
+        try {
+          const fileData = await fs.readFile(file.path);
+          const base64Data = fileData.toString("base64");
 
-        if (file.mimetype.startsWith("image")) {
-          photos.push(`data:${file.mimetype};base64,${base64Data}`);
-        } else if (file.mimetype.startsWith("video")) {
-          video = `data:${file.mimetype};base64,${base64Data}`;
+          if (file.mimetype.startsWith("image")) {
+            photos.push(`data:${file.mimetype};base64,${base64Data}`);
+          } else if (file.mimetype.startsWith("video")) {
+            // Add video validation
+            const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB
+            if (file.size > MAX_VIDEO_SIZE) {
+              await fs.unlink(file.path);
+              return res
+                .status(400)
+                .json(
+                  new ApiResponse(
+                    false,
+                    "Video file too large. Maximum size is 50MB"
+                  )
+                );
+            }
+            video = `data:${file.mimetype};base64,${base64Data}`;
+          }
+
+          // Remove temp file
+          await fs
+            .unlink(file.path)
+            .catch((e) => console.warn("File cleanup failed:", e.message));
+        } catch (fileError) {
+          console.error("Error processing file:", fileError);
+          await fs.unlink(file.path).catch(() => {});
+          return res
+            .status(500)
+            .json(
+              new ApiResponse(
+                false,
+                `Error processing file: ${fileError.message}`
+              )
+            );
         }
-
-        // Remove temp file
-        await fs
-          .unlink(file.path)
-          .catch((e) => console.warn("File cleanup failed:", e.message));
       }
     }
 
@@ -277,8 +158,12 @@ exports.reportIncident = async (req, res) => {
     }
 
     // Get guard info
-    const guard = await User.findById(req.user.id);
 
+    const guard = await User.findById(new mongoose.Types.ObjectId(req.user.id));
+
+    if (!guard) {
+      return res.status(404).json(new ApiResponse(false, "User not found"));
+    }
     // Assign supervisor or provided users
     let assignedToArray = [];
     if (assignedTo && assignedTo.length > 0) {
@@ -303,6 +188,9 @@ exports.reportIncident = async (req, res) => {
       assignedTo: assignedToArray,
       photos,
       video,
+      qrId: qrId ? new mongoose.Types.ObjectId(qrId) : null,
+      isFromQRScan: isFromQRScan,
+      siteInfo: siteInfo,
       status: "reported",
       companyId,
     });
@@ -310,11 +198,13 @@ exports.reportIncident = async (req, res) => {
     const populatedIncident = await Incident.findById(incident._id)
       .populate("reportedBy", "name email role")
       .populate("assignedTo", "name email role")
-      .populate("companyId", "name email role");
+      .populate("companyId", "name email role")
+      .populate("qrId", "siteId description lat lng radius");
 
     return res.status(201).json(
       new ApiResponse(true, "Incident reported successfully", {
         incident: populatedIncident,
+        // isFromQRScan: isFromQRScan,
       })
     );
   } catch (err) {
@@ -373,6 +263,7 @@ exports.getIncidents = async (req, res) => {
       .populate("reportedBy", "name email role")
       .populate("assignedTo", "name email role")
       .populate("companyId", "name email role")
+      .populate("qrId", "siteId description lat lng radius")
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(Number(limit));

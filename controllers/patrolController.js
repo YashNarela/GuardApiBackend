@@ -22,782 +22,12 @@ const moment = require("moment-timezone");
 
 
 
-
-
-// exports.scanQR = async (req, res) => {
-//   try {
-//     const guardId = req.user.id;
-//     console.log("scanQR hit", req.user, req.body, req.file);
-
-//     const { qrData, guardLat, guardLng, distanceMeters, isVerified } = req.body;
-
-//     if (
-//       !qrData ||
-//       guardLat == null ||
-//       guardLng == null ||
-//       distanceMeters == null ||
-//       isVerified == null
-//     ) {
-//       return res
-//         .status(400)
-//         .json(new ApiResponse(false, "All fields required"));
-//     }
-
-//     const guard = await User.findById(guardId).populate("createdBy");
-//     if (!guard || guard.role !== "guard") {
-//       return res.status(403).json(new ApiResponse(false, "Invalid guard"));
-//     }
-
-//     // Handle photo upload
-//     let photoBase64 = null;
-//     if (req.file) {
-//       const full = path.join(uploadDir, req.file.filename);
-//       const data = await fs.readFile(full);
-//       photoBase64 = data.toString("base64");
-//       await fs
-//         .unlink(full)
-//         .catch((e) => console.warn("unlink failed:", e.message));
-//     }
-
-//     const now = new Date();
-
-//     // Find active shift for the guard
-//     const activeShift = await Shift.findOne({
-//       assignedGuards: new mongoose.Types.ObjectId(guardId),
-//       startTime: { $lte: now },
-//       endTime: { $gte: now },
-//       isActive: true,
-//     });
-//     console.log("Active shift found:", activeShift ? activeShift._id : "none");
-
-//     // Validate QR code
-//     let qrDoc = null;
-//     if (mongoose.Types.ObjectId.isValid(qrData)) {
-//       qrDoc = await QR.findById(qrData);
-//     }
-//     if (!qrDoc) {
-//       return res
-//         .status(404)
-//         .json(new ApiResponse(false, "Invalid or expired QR"));
-//     }
-
-//     // Find the patrol plan that contains this QR and is assigned to this guard
-//     let patrolPlan = await PatrolPlan.findOne({
-//       "assignedGuards.guardId": new mongoose.Types.ObjectId(guardId),
-//       "checkpoints.qrId": new mongoose.Types.ObjectId(qrDoc._id),
-//       isActive: true,
-//     });
-//     if (!patrolPlan) {
-//       return res
-//         .status(404)
-//         .json(
-//           new ApiResponse(false, "No active patrol plan assigned with this QR")
-//         );
-//     }
-
-//     // Check guard assignment to current shift
-//     if (activeShift) {
-//       const guardAssignment = patrolPlan.assignedGuards.find(
-//         (ag) => ag.guardId.toString() === guardId
-//       );
-//       if (
-//         guardAssignment?.assignedShifts?.length &&
-//         !guardAssignment.assignedShifts.some(
-//           (shiftId) => shiftId.toString() === activeShift._id.toString()
-//         )
-//       ) {
-//         return res
-//           .status(403)
-//           .json(
-//             new ApiResponse(
-//               false,
-//               "You are not assigned to scan this QR code during current shift"
-//             )
-//           );
-//       }
-//     }
-
-//     // ✅ Calculate current round number
-//     const totalScansForGuard = await Patrol.countDocuments({
-//       guard: guardId,
-//       patrolPlanId: patrolPlan._id,
-//     });
-//     const roundNumber =
-//       Math.floor(totalScansForGuard / patrolPlan.checkpoints.length) + 1;
-
-//     // Optional: Check if all rounds completed
-//     if (roundNumber > patrolPlan.rounds) {
-//       return res
-//         .status(400)
-//         .json(
-//           new ApiResponse(
-//             false,
-//             "All rounds for this patrol plan are completed"
-//           )
-//         );
-//     }
-
-//     // Create new patrol record
-//     const patrol = await Patrol.create({
-//       guard: new mongoose.Types.ObjectId(guardId),
-//       shift: activeShift ? activeShift._id : null,
-//       patrolPlanId: patrolPlan._id,
-//       qrCodeId: qrDoc._id,
-//       roundNumber, // ✅ track round
-//       location: { lat: Number(guardLat), lng: Number(guardLng) },
-//       distanceMeters: Number(distanceMeters),
-//       photo: photoBase64,
-//       isVerified: Boolean(isVerified),
-//       firstScanAt: now,
-//       lastScanAt: now,
-//       scanCount: 1,
-//     });
-
-//     return res.status(201).json(
-//       new ApiResponse(true, "Checkpoint scanned successfully", {
-//         patrolId: patrol._id,
-//         qrCodeId: qrDoc._id,
-//         siteId: qrDoc.siteId,
-//         patrolPlanId: patrolPlan._id,
-//         patrolPlanName: patrolPlan.planName,
-//         isVerified: Boolean(isVerified),
-//         distanceMeters: Number(distanceMeters),
-//         timestamp: patrol.createdAt,
-//         roundNumber,
-//         scanCount: 1,
-//       })
-//     );
-//   } catch (err) {
-//     console.error("Error in scanQR:", err);
-//     return res.status(500).json(new ApiResponse(false, err.message));
-//   }
-// };
-
-
-
-
-
-
-
-// exports.scanQR = async (req, res) => {
-//   try {
-//     const guardId = req.user.id;
-//     const { qrData, guardLat, guardLng, distanceMeters, isVerified } = req.body;
-
-//     if (
-//       !qrData ||
-//       guardLat == null ||
-//       guardLng == null ||
-//       distanceMeters == null ||
-//       isVerified == null
-//     ) {
-//       return res
-//         .status(400)
-//         .json(new ApiResponse(false, "All fields required"));
-//     }
-
-//     const guard = await User.findById(guardId).populate("createdBy");
-//     if (!guard || guard.role !== "guard") {
-//       return res.status(403).json(new ApiResponse(false, "Invalid guard"));
-//     }
-
-//     // Handle photo upload
-//     let photoBase64 = null;
-//     if (req.file) {
-//       const full = path.join(uploadDir, req.file.filename);
-//       const data = await fs.readFile(full);
-//       photoBase64 = data.toString("base64");
-//       await fs
-//         .unlink(full)
-//         .catch((e) => console.warn("unlink failed:", e.message));
-//     }
-
-//     const now = new Date();
-
-//     // Find active shift for the guard
-//     const activeShift = await Shift.findOne({
-//       assignedGuards: guardId,
-//       startTime: { $lte: now },
-//       endTime: { $gte: now },
-//       isActive: true,
-//     });
-
-//     // Validate QR code
-//     let qrDoc = null;
-//     if (mongoose.Types.ObjectId.isValid(qrData)) {
-//       qrDoc = await QR.findById(qrData);
-//     }
-//     if (!qrDoc) {
-//       return res
-//         .status(404)
-//         .json(new ApiResponse(false, "Invalid or expired QR"));
-//     }
-
-//     // Find the patrol plan that contains this QR and is assigned to this guard
-//     let patrolPlan = await PatrolPlan.findOne({
-//       "assignedGuards.guardId": guardId,
-//       "checkpoints.qrId": qrDoc._id,
-//       isActive: true,
-//     });
-
-//     if (!patrolPlan) {
-//       return res
-//         .status(404)
-//         .json(
-//           new ApiResponse(false, "No active patrol plan assigned with this QR")
-//         );
-//     }
-
-//     // Check guard assignment to current shift
-//     if (activeShift) {
-//       const guardAssignment = patrolPlan.assignedGuards.find(
-//         (ag) => ag.guardId.toString() === guardId
-//       );
-//       if (
-//         guardAssignment?.assignedShifts?.length &&
-//         !guardAssignment.assignedShifts.some(
-//           (shiftId) => shiftId.toString() === activeShift._id.toString()
-//         )
-//       ) {
-//         return res
-//           .status(403)
-//           .json(
-//             new ApiResponse(
-//               false,
-//               "You are not assigned to scan this QR code during current shift"
-//             )
-//           );
-//       }
-//     }
-
-//     // --- NEW ROUND LOGIC STARTS HERE ---
-//     // How many checkpoints in this plan
-//     const totalCheckpoints = patrolPlan.checkpoints.length;
-
-//     // Find all scans by this guard for this patrol plan
-//     const totalScansForGuard = await Patrol.countDocuments({
-//       guard: guardId,
-//       patrolPlanId: patrolPlan._id,
-//     });
-
-//     // Calculate current round number (1-indexed)
-//     const roundNumber = Math.floor(totalScansForGuard / totalCheckpoints) + 1;
-
-//     // Find which checkpoints already scanned in this round
-//     const currentRoundScans = await Patrol.find({
-//       guard: guardId,
-//       patrolPlanId: patrolPlan._id,
-//       roundNumber,
-//     }).select("qrCodeId");
-
-//     const scannedCheckpointIds = currentRoundScans.map((scan) =>
-//       scan.qrCodeId.toString()
-//     );
-
-//     // Check if current checkpoint already scanned in this round
-//     if (scannedCheckpointIds.includes(qrDoc._id.toString())) {
-//       return res
-//         .status(400)
-//         .json(
-//           new ApiResponse(
-//             false,
-//             "You have already scanned this checkpoint for the current round"
-//           )
-//         );
-//     }
-
-//     // If all checkpoints scanned in this round, restrict further scans until the next round
-//     if (scannedCheckpointIds.length >= totalCheckpoints) {
-//       return res
-//         .status(400)
-//         .json(
-//           new ApiResponse(
-//             false,
-//             "All checkpoints have been scanned for this round. Wait for next round."
-//           )
-//         );
-//     }
-
-//     // Optional: Check if all rounds completed
-//     if (roundNumber > patrolPlan.rounds) {
-//       return res
-//         .status(400)
-//         .json(
-//           new ApiResponse(
-//             false,
-//             "All rounds for this patrol plan are completed"
-//           )
-//         );
-//     }
-//     // --- NEW ROUND LOGIC ENDS HERE ---
-
-//     // Create new patrol record
-//     const patrol = await Patrol.create({
-//       guard: guardId,
-//       shift: activeShift ? activeShift._id : null,
-//       patrolPlanId: patrolPlan._id,
-//       qrCodeId: qrDoc._id,
-//       roundNumber,
-//       location: { lat: Number(guardLat), lng: Number(guardLng) },
-//       distanceMeters: Number(distanceMeters),
-//       photo: photoBase64,
-//       isVerified: Boolean(isVerified),
-//       firstScanAt: now,
-//       lastScanAt: now,
-//       scanCount: 1,
-//     });
-
-//     return res.status(201).json(
-//       new ApiResponse(true, "Checkpoint scanned successfully", {
-//         patrolId: patrol._id,
-//         qrCodeId: qrDoc._id,
-//         siteId: qrDoc.siteId,
-//         patrolPlanId: patrolPlan._id,
-//         patrolPlanName: patrolPlan.planName,
-//         isVerified: Boolean(isVerified),
-//         distanceMeters: Number(distanceMeters),
-//         timestamp: patrol.createdAt,
-//         roundNumber,
-//         scanCount: 1,
-//       })
-//     );
-//   } catch (err) {
-//     console.error("Error in scanQR:", err);
-//     return res.status(500).json(new ApiResponse(false, err.message));
-//   }
-// };
-
-// exports.scanQR = async (req, res) => {
-//   try {
-//     const guardId = req.user.id;
-//     const { qrData, guardLat, guardLng, distanceMeters, isVerified } = req.body;
-
-//     if (
-//       !qrData ||
-//       guardLat == null ||
-//       guardLng == null ||
-//       distanceMeters == null ||
-//       isVerified == null
-//     ) {
-//       return res
-//         .status(400)
-//         .json(new ApiResponse(false, "All fields required"));
-//     }
-
-//     const guard = await User.findById(guardId).populate("createdBy");
-//     if (!guard || guard.role !== "guard") {
-//       return res.status(403).json(new ApiResponse(false, "Invalid guard"));
-//     }
-
-//     // Handle photo upload
-//     let photoBase64 = null;
-//     if (req.file) {
-//       const full = path.join(uploadDir, req.file.filename);
-//       const data = await fs.readFile(full);
-//       photoBase64 = data.toString("base64");
-//       await fs
-//         .unlink(full)
-//         .catch((e) => console.warn("unlink failed:", e.message));
-//     }
-
-//     const now = new Date();
-
-//     // Find active shift for the guard
-//     const activeShift = await Shift.findOne({
-//       assignedGuards: guardId,
-//       startTime: { $lte: now },
-//       endTime: { $gte: now },
-//       isActive: true,
-//     });
-
-//     // Validate QR code
-//     let qrDoc = null;
-//     if (mongoose.Types.ObjectId.isValid(qrData)) {
-//       qrDoc = await QR.findById(qrData);
-//     }
-//     if (!qrDoc) {
-//       return res
-//         .status(404)
-//         .json(new ApiResponse(false, "Invalid or expired QR"));
-//     }
-
-//     // Find the patrol plan that contains this QR and is assigned to this guard
-//     let patrolPlan = await PatrolPlan.findOne({
-//       "assignedGuards.guardId": guardId,
-//       "checkpoints.qrId": qrDoc._id,
-//       isActive: true,
-//     });
-
-//     if (!patrolPlan) {
-//       return res
-//         .status(404)
-//         .json(
-//           new ApiResponse(false, "No active patrol plan assigned with this QR")
-//         );
-//     }
-
-//     // Check guard assignment to current shift
-//     if (activeShift) {
-//       const guardAssignment = patrolPlan.assignedGuards.find(
-//         (ag) => ag.guardId.toString() === guardId
-//       );
-//       if (
-//         guardAssignment?.assignedShifts?.length &&
-//         !guardAssignment.assignedShifts.some(
-//           (shiftId) => shiftId.toString() === activeShift._id.toString()
-//         )
-//       ) {
-//         return res
-//           .status(403)
-//           .json(
-//             new ApiResponse(
-//               false,
-//               "You are not assigned to scan this QR code during current shift"
-//             )
-//           );
-//       }
-//     }
-
-//     // --- ROUND LOGIC STARTS HERE ---
-//     const totalCheckpoints = patrolPlan.checkpoints.length;
-//     const totalScansForGuard = await Patrol.countDocuments({
-//       guard: guardId,
-//       patrolPlanId: patrolPlan._id,
-//     });
-
-//     // Calculate current round number (1-indexed)
-//     const roundNumber = Math.floor(totalScansForGuard / totalCheckpoints) + 1;
-
-//     // Don't allow scanning beyond the total rounds
-//     if (roundNumber > patrolPlan.rounds) {
-//       return res
-//         .status(400)
-//         .json(
-//           new ApiResponse(
-//             false,
-//             "All rounds for this patrol plan are completed"
-//           )
-//         );
-//     }
-
-//     // Find which checkpoints already scanned in this round
-//     const currentRoundScans = await Patrol.find({
-//       guard: guardId,
-//       patrolPlanId: patrolPlan._id,
-//       roundNumber,
-//     }).select("qrCodeId");
-
-//     const scannedCheckpointIds = currentRoundScans.map((scan) =>
-//       scan.qrCodeId.toString()
-//     );
-
-//     // Check if current checkpoint already scanned in this round
-//     if (scannedCheckpointIds.includes(qrDoc._id.toString())) {
-//       return res
-//         .status(400)
-//         .json(
-//           new ApiResponse(
-//             false,
-//             "You have already scanned this checkpoint for the current round"
-//           )
-//         );
-//     }
-
-//     // If all checkpoints scanned in this round, restrict further scans until the next round
-//     if (scannedCheckpointIds.length >= totalCheckpoints) {
-//       return res
-//         .status(400)
-//         .json(
-//           new ApiResponse(
-//             false,
-//             "All checkpoints have been scanned for this round. Wait for next round."
-//           )
-//         );
-//     }
-//     // --- ROUND LOGIC ENDS HERE ---
-
-//     // Create new patrol record
-//     const patrol = await Patrol.create({
-//       guard: guardId,
-//       shift: activeShift ? activeShift._id : null,
-//       patrolPlanId: patrolPlan._id,
-//       qrCodeId: qrDoc._id,
-//       roundNumber,
-//       location: { lat: Number(guardLat), lng: Number(guardLng) },
-//       distanceMeters: Number(distanceMeters),
-//       photo: photoBase64,
-//       isVerified: Boolean(isVerified),
-//       firstScanAt: now,
-//       lastScanAt: now,
-//       scanCount: 1,
-//     });
-
-//     return res.status(201).json(
-//       new ApiResponse(true, "Checkpoint scanned successfully", {
-//         patrolId: patrol._id,
-//         qrCodeId: qrDoc._id,
-//         siteId: qrDoc.siteId,
-//         patrolPlanId: patrolPlan._id,
-//         patrolPlanName: patrolPlan.planName,
-//         isVerified: Boolean(isVerified),
-//         distanceMeters: Number(distanceMeters),
-//         timestamp: patrol.createdAt,
-//         roundNumber,
-//         scanCount: 1,
-//       })
-//     );
-//   } catch (err) {
-//     console.error("Error in scanQR:", err);
-//     return res.status(500).json(new ApiResponse(false, err.message));
-//   }
-// };
-
-// exports.scanQR = async (req, res) => {
-//   try {
-//     const guardId = req.user.id;
-//     const { qrData, guardLat, guardLng, distanceMeters, isVerified } = req.body;
-
-//     if (
-//       !qrData ||
-//       guardLat == null ||
-//       guardLng == null ||
-//       distanceMeters == null ||
-//       isVerified == null
-//     ) {
-//       return res
-//         .status(400)
-//         .json(new ApiResponse(false, "All fields required"));
-//     }
-
-//     const guard = await User.findById(guardId).populate("createdBy");
-//     if (!guard || guard.role !== "guard") {
-//       return res.status(403).json(new ApiResponse(false, "Invalid guard"));
-//     }
-
-//     // Handle photo upload
-//     let photoBase64 = null;
-//     if (req.file) {
-//       const full = path.join(uploadDir, req.file.filename);
-//       const data = await fs.readFile(full);
-//       photoBase64 = data.toString("base64");
-//       await fs
-//         .unlink(full)
-//         .catch((e) => console.warn("unlink failed:", e.message));
-//     }
-
-//     const now = new Date();
-
-//     // Find active shift for the guard
-//     const activeShift = await Shift.findOne({
-//       assignedGuards: guardId,
-//       startTime: { $lte: now },
-//       endTime: { $gte: now },
-//       isActive: true,
-//     });
-
-//     // Validate QR code
-//     let qrDoc = null;
-//     if (mongoose.Types.ObjectId.isValid(qrData)) {
-//       qrDoc = await QR.findById(qrData);
-//     }
-//     if (!qrDoc) {
-//       return res
-//         .status(404)
-//         .json(new ApiResponse(false, "Invalid or expired QR"));
-//     }
-
-//     // Find the patrol plan that contains this QR and is assigned to this guard
-//     let patrolPlan = await PatrolPlan.findOne({
-//       "assignedGuards.guardId": guardId,
-//       "checkpoints.qrId": qrDoc._id,
-//       isActive: true,
-//     });
-
-//     if (!patrolPlan) {
-//       return res
-//         .status(404)
-//         .json(
-//           new ApiResponse(false, "No active patrol plan assigned with this QR")
-//         );
-//     }
-
-//     // Check guard assignment to current shift
-//     if (activeShift) {
-//       const guardAssignment = patrolPlan.assignedGuards.find(
-//         (ag) => ag.guardId.toString() === guardId
-//       );
-//       if (
-//         guardAssignment?.assignedShifts?.length &&
-//         !guardAssignment.assignedShifts.some(
-//           (shiftId) => shiftId.toString() === activeShift._id.toString()
-//         )
-//       ) {
-//         return res
-//           .status(403)
-//           .json(
-//             new ApiResponse(
-//               false,
-//               "You are not assigned to scan this QR code during current shift"
-//             )
-//           );
-//       }
-//     }
-
-//     // --- IMPROVED ROUND LOGIC STARTS HERE ---
-//     const totalCheckpoints = patrolPlan.checkpoints.length;
-
-//     // Get all scans for this guard and patrol plan, sorted by creation time
-//     const allScans = await Patrol.find({
-//       guard: guardId,
-//       patrolPlanId: patrolPlan._id,
-//     }).sort({ createdAt: 1 });
-
-//     // Determine current round number
-//     let currentRound = 1;
-//     let scansInCurrentRound = [];
-
-//     if (allScans.length > 0) {
-//       // Group scans by round number stored in DB
-//       const scansByRound = {};
-//       allScans.forEach((scan) => {
-//         const rNum = scan.roundNumber || 1;
-//         if (!scansByRound[rNum]) scansByRound[rNum] = [];
-//         scansByRound[rNum].push(scan);
-//       });
-
-//       // Find the latest incomplete round or start a new one
-//       const roundNumbers = Object.keys(scansByRound)
-//         .map(Number)
-//         .sort((a, b) => a - b);
-
-//       for (const rNum of roundNumbers) {
-//         const scansInRound = scansByRound[rNum];
-//         if (scansInRound.length < totalCheckpoints) {
-//           // This round is incomplete
-//           currentRound = rNum;
-//           scansInCurrentRound = scansInRound;
-//           break;
-//         } else if (rNum === roundNumbers[roundNumbers.length - 1]) {
-//           // Last round is complete, start new round
-//           currentRound = rNum + 1;
-//           scansInCurrentRound = [];
-//         }
-//       }
-//     }
-
-//     // Don't allow scanning beyond the total rounds
-//     if (currentRound > patrolPlan.rounds) {
-//       return res
-//         .status(400)
-//         .json(
-//           new ApiResponse(
-//             false,
-//             `All ${patrolPlan.rounds} rounds for this patrol plan are completed`
-//           )
-//         );
-//     }
-
-//     // Get checkpoint IDs already scanned in current round
-//     const scannedCheckpointIds = scansInCurrentRound.map((scan) =>
-//       scan.qrCodeId.toString()
-//     );
-
-//     // Check if current checkpoint already scanned in this round
-//     if (scannedCheckpointIds.includes(qrDoc._id.toString())) {
-//       return res
-//         .status(400)
-//         .json(
-//           new ApiResponse(
-//             false,
-//             `You have already scanned this checkpoint in round ${currentRound}. Progress: ${scannedCheckpointIds.length}/${totalCheckpoints} checkpoints completed.`
-//           )
-//         );
-//     }
-
-//     // Optional: Enforce sequence order (uncomment if you want strict sequential scanning)
-//     /*
-//     const currentCheckpoint = patrolPlan.checkpoints.find(
-//       cp => cp.qrId.toString() === qrDoc._id.toString()
-//     );
-    
-//     if (currentCheckpoint) {
-//       const expectedSequence = scannedCheckpointIds.length + 1;
-//       if (currentCheckpoint.sequence !== expectedSequence) {
-//         const nextCheckpoint = patrolPlan.checkpoints.find(
-//           cp => cp.sequence === expectedSequence
-//         );
-//         return res.status(400).json(
-//           new ApiResponse(
-//             false,
-//             `Please scan checkpoints in sequence. Next checkpoint: ${nextCheckpoint?.siteId || 'unknown'}`
-//           )
-//         );
-//       }
-//     }
-//     */
-
-//     // --- ROUND LOGIC ENDS HERE ---
-
-//     // Create new patrol record
-//     const patrol = await Patrol.create({
-//       guard: guardId,
-//       shift: activeShift ? activeShift._id : null,
-//       patrolPlanId: patrolPlan._id,
-//       qrCodeId: qrDoc._id,
-//       roundNumber: currentRound,
-//       location: { lat: Number(guardLat), lng: Number(guardLng) },
-//       distanceMeters: Number(distanceMeters),
-//       photo: photoBase64,
-//       isVerified: Boolean(isVerified),
-//       firstScanAt: now,
-//       lastScanAt: now,
-//       scanCount: 1,
-//     });
-
-//     // Calculate progress
-//     const scannedCount = scannedCheckpointIds.length + 1;
-//     const isRoundComplete = scannedCount === totalCheckpoints;
-//     const progressMessage = isRoundComplete
-//       ? `Round ${currentRound} completed! ${
-//           currentRound < patrolPlan.rounds
-//             ? "Ready for next round."
-//             : "All rounds completed!"
-//         }`
-//       : `Progress: ${scannedCount}/${totalCheckpoints} checkpoints in round ${currentRound}`;
-
-//     return res.status(201).json(
-//       new ApiResponse(true, progressMessage, {
-//         patrolId: patrol._id,
-//         qrCodeId: qrDoc._id,
-//         siteId: qrDoc.siteId,
-//         patrolPlanId: patrolPlan._id,
-//         patrolPlanName: patrolPlan.planName,
-//         isVerified: Boolean(isVerified),
-//         distanceMeters: Number(distanceMeters),
-//         timestamp: patrol.createdAt,
-//         roundNumber: currentRound,
-//         scanCount: 1,
-//         progress: {
-//           currentRound,
-//           totalRounds: patrolPlan.rounds,
-//           checkpointsScanned: scannedCount,
-//           totalCheckpoints,
-//           isRoundComplete,
-//           remainingCheckpoints: totalCheckpoints - scannedCount,
-//         },
-//       })
-//     );
-//   } catch (err) {
-//     console.error("Error in scanQR:", err);
-//     return res.status(500).json(new ApiResponse(false, err.message));
-//   }
-// };
-
-
-
 exports.scanQR = async (req, res) => {
   try {
     const guardId = req.user.id;
+
+    console.log('***req***', req.user);
+    const companyId =  new mongoose.Types.ObjectId( req.user.companyId);
 
     console.log('guardId:', guardId);
     
@@ -1015,6 +245,7 @@ exports.scanQR = async (req, res) => {
       isVerified: Boolean(isVerified),
       firstScanAt: now,
       lastScanAt: now,
+      companyId: companyId,
       scanCount: 1,
     });
 
@@ -1032,6 +263,8 @@ exports.scanQR = async (req, res) => {
     return res.status(201).json(
       new ApiResponse(true, progressMessage, {
         patrolId: patrol._id,
+
+        companyId: patrol?.companyId,
         qrCodeId: qrDoc._id,
         siteId: qrDoc.siteId,
         patrolPlanId: patrolPlan._id,
@@ -1163,18 +396,71 @@ exports.getPatrolLogs = async (req, res) => {
           foreignField: "_id",
           as: "shiftInfo",
           pipeline: [
-            { $project: { _id: 1, shiftName: 1, startTime: 1, endTime: 1, shiftType: 1 } },
+            {
+              $project: {
+                _id: 1,
+                shiftName: 1,
+                startTime: 1,
+                endTime: 1,
+                shiftType: 1,
+              },
+            },
           ],
         },
       },
       { $unwind: { path: "$shiftInfo", preserveNullAndEmptyArrays: true } },
+      // {
+      //   $lookup: {
+      //     from: "qrs",
+      //     localField: "qrCodeId",
+      //     foreignField: "_id",
+      //     as: "qrInfo",
+      //     pipeline: [
+      //       {
+      //         $project: {
+      //           _id: 1,
+      //           siteId: 1,
+      //           description: 1,
+      //           lat: 1,
+      //           lng: 1,
+      //           companyId: 1,
+      //         },
+      //       },
+      //     ],
+      //   },
+      // },
+      // { $unwind: { path: "$qrInfo", preserveNullAndEmptyArrays: true } },
       {
         $lookup: {
           from: "qrs",
           localField: "qrCodeId",
           foreignField: "_id",
           as: "qrInfo",
-          pipeline: [{ $project: { _id: 1, siteId: 1, description: 1, lat: 1, lng: 1 } }],
+          pipeline: [
+            {
+              $project: {
+                _id: 1,
+                siteId: 1,
+                description: 1,
+                lat: 1,
+                lng: 1,
+                companyId: 1,
+              },
+            },
+            // ADD ONLY THIS FOR COMPANY POPULATE:
+            {
+              $lookup: {
+                from: "users",
+                localField: "companyId",
+                foreignField: "_id",
+                as: "company",
+                pipeline: [
+                  { $project: { _id: 1, name: 1, email: 1, phone: 1 } },
+                ],
+              },
+            },
+            { $unwind: { path: "$company", preserveNullAndEmptyArrays: true } },
+          ],
         },
       },
       { $unwind: { path: "$qrInfo", preserveNullAndEmptyArrays: true } },
@@ -1184,10 +470,14 @@ exports.getPatrolLogs = async (req, res) => {
           localField: "patrolPlanId",
           foreignField: "_id",
           as: "patrolPlanInfo",
-          pipeline: [{ $project: { _id: 1, planName: 1, description: 1, rounds: 1 } }],
+          pipeline: [
+            { $project: { _id: 1, planName: 1, description: 1, rounds: 1 } },
+          ],
         },
       },
-      { $unwind: { path: "$patrolPlanInfo", preserveNullAndEmptyArrays: true } },
+      {
+        $unwind: { path: "$patrolPlanInfo", preserveNullAndEmptyArrays: true },
+      },
       {
         $project: {
           _id: 1,
@@ -1264,23 +554,32 @@ exports.getGuardPerformanceReport = async (req, res) => {
     let start, end;
     if (startDate) {
       // If only start date is provided
-      start = moment(startDate).startOf("day").toDate();
+      // start = moment(startDate).startOf("day").toDate();
+        start = moment.utc(startDate).startOf("day").toDate();
 
       if (endDate) {
         // Both start and end dates provided
+        // end = moment(endDate).endOf("day").toDate();
         end = moment(endDate).endOf("day").toDate();
       } else {
         // Only start date provided - set end date to same day
-        end = moment(startDate).endOf("day").toDate();
+        // end = moment.utc(startDate).endOf("day").toDate();
+            end = moment.utc(startDate).endOf("day").toDate();
       }
     } else if (endDate) {
       // Only end date provided
-      end = moment(endDate).endOf("day").toDate();
-      start = moment(endDate).startOf("day").toDate(); // Set start to same day
+      // end = moment(endDate).endOf("day").toDate();
+      // start = moment(endDate).startOf("day").toDate(); // Set start to same day
+
+        end = moment.utc(endDate).endOf("day").toDate();
+        start = moment.utc(endDate).startOf("day").toDate(); 
     } else {
       // No dates provided - default to last 30 days
-      end = moment().endOf("day").toDate();
-      start = moment().subtract(30, "days").startOf("day").toDate();
+      // end = moment().endOf("day").toDate();
+      // start = moment().subtract(30, "days").startOf("day").toDate();
+
+        end = moment.utc().endOf("day").toDate();
+        start = moment.utc().subtract(30, "days").startOf("day").toDate();
     }
 
     console.log(

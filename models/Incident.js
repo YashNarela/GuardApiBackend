@@ -23,7 +23,7 @@ const incidentSchema = new mongoose.Schema(
         "other",
       ],
 
-      default: "other"
+      default: "other",
       // required: true
     },
     severity: {
@@ -54,6 +54,26 @@ const incidentSchema = new mongoose.Schema(
       enum: ["reported", "investigating", "in-progress", "resolved", "closed"],
       default: "reported",
     },
+
+    //  added two things in the incident
+    qrId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "QR",
+    },
+    siteInfo: {
+      siteId: String,
+      description: String,
+      lat: Number,
+      lng: Number,
+      radius: Number,
+    },
+
+    isFromQRScan: {
+      type: Boolean,
+      default: false,
+    },
+
+    // ⬆️
     photos: [
       {
         type: String,
