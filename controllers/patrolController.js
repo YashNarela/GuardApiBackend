@@ -409,27 +409,6 @@ exports.getPatrolLogs = async (req, res) => {
         },
       },
       { $unwind: { path: "$shiftInfo", preserveNullAndEmptyArrays: true } },
-      // {
-      //   $lookup: {
-      //     from: "qrs",
-      //     localField: "qrCodeId",
-      //     foreignField: "_id",
-      //     as: "qrInfo",
-      //     pipeline: [
-      //       {
-      //         $project: {
-      //           _id: 1,
-      //           siteId: 1,
-      //           description: 1,
-      //           lat: 1,
-      //           lng: 1,
-      //           companyId: 1,
-      //         },
-      //       },
-      //     ],
-      //   },
-      // },
-      // { $unwind: { path: "$qrInfo", preserveNullAndEmptyArrays: true } },
       {
         $lookup: {
           from: "qrs",
@@ -447,23 +426,11 @@ exports.getPatrolLogs = async (req, res) => {
                 companyId: 1,
               },
             },
-            // ADD ONLY THIS FOR COMPANY POPULATE:
-            {
-              $lookup: {
-                from: "users",
-                localField: "companyId",
-                foreignField: "_id",
-                as: "company",
-                pipeline: [
-                  { $project: { _id: 1, name: 1, email: 1, phone: 1 } },
-                ],
-              },
-            },
-            { $unwind: { path: "$company", preserveNullAndEmptyArrays: true } },
           ],
         },
       },
       { $unwind: { path: "$qrInfo", preserveNullAndEmptyArrays: true } },
+   
       {
         $lookup: {
           from: "patrolplans",
